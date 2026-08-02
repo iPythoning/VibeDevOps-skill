@@ -1,6 +1,8 @@
 # /flow — 全链路开发工作流编排器
 
 > 触发词：`/flow`、`走流程`、`全链路工作流`、`feature 开发流程`、`组装工作流`、`一条龙`
+> 
+> 🇬🇧 [English Version](README.en.md)
 
 把手头零散的命令收口成一条主力链。**ponytail 全程压舱**（默认 full，动老代码/重构用 ultra），只写任务真正需要的最少代码，但绝不砍校验/错误处理/安全/可访问性。
 
@@ -45,6 +47,27 @@
 - **`/flow <阶段名或编号>`**: 从该阶段开始引导。
 - **`/flow 快速` / `/flow 完整`**: 按对应线逐阶段推进。
 - 执行原则: **无副作用阶段**（思考/计划/自检/复盘）我可代跑；**有副作用阶段**（出 PR、部署）只列命令并停下等你确认，**绝不自动部署生产**。每过一关向用户汇报产出与下一步。
+
+---
+
+## 开源生态映射
+
+`/flow` 每个环节都对应成熟的 GitHub 开源产品。你可以直接用这些工具，也可以通过 `/flow` 统一编排。
+
+| 阶段 | 环节 | 开源生态 |
+|---|---|---|
+| 0 | 压舱 | [scc](https://github.com/boyter/scc) · [gocyclo](https://github.com/fzipp/gocyclo) · [complexity-report](https://github.com/escomplex/escomplex) |
+| 1 | 思考 | [Obsidian](https://github.com/obsidianmd) · [logseq](https://github.com/logseq/logseq) · [Docusaurus](https://github.com/facebook/docusaurus) |
+| 2 | 计划 | [adr-tools](https://github.com/npryce/adr-tools) · [log4brains](https://github.com/thomvaill/log4brains) · [mkdocs](https://github.com/mkdocs/mkdocs) |
+| 3 | 实现 | [Jest](https://github.com/jestjs/jest) · [pytest](https://github.com/pytest-dev/pytest) · [Vitest](https://github.com/vitest-dev/vitest) · [Playwright](https://github.com/microsoft/playwright) |
+| 4 | 自检 | [ESLint](https://github.com/eslint/eslint) · [Prettier](https://github.com/prettier/prettier) · [Husky](https://github.com/typicode/husky) · [SonarQube](https://github.com/SonarSource/sonarqube) · [Codecov](https://github.com/codecov/codecov-action) |
+| 5 | 出活 | [semantic-release](https://github.com/semantic-release/semantic-release) · [release-it](https://github.com/release-it/release-it) · [changesets](https://github.com/changesets/changesets) · [git-cliff](https://github.com/orhun/git-cliff) |
+| 6 | 部署 | [Argo CD](https://github.com/argoproj/argo-cd) · [Flux](https://github.com/fluxcd/flux2) · [Kubernetes](https://github.com/kubernetes/kubernetes) · [Docker](https://github.com/moby/moby) |
+| 6 | 金丝雀 | [Flagger](https://github.com/fluxcd/flagger) · [Argo Rollouts](https://github.com/argoproj/argo-rollouts) |
+| 7 | 复盘 | [Retrospected](https://github.com/antoinejaussoin/retro-board) · [EasyRetro](https://easyretro.io) |
+| 7 | 压测 | [k6](https://github.com/grafana/k6) · [Artillery](https://github.com/artilleryio/artillery) · [Locust](https://github.com/locustio/locust) |
+
+> 💡 **/flow 的独特价值**：不是取代这些工具，而是把它们串成一条**有安全关卡、有上下文记忆、有复盘沉淀**的完整工作流。每个环节都经得起推敲，每个决策都有据可查。
 
 ---
 

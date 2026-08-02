@@ -83,29 +83,91 @@ ln -s ~/.shared-skills/flow ~/.agents/skills/flow
 ln -s ~/.shared-skills/flow ~/.cc-switch/skills/flow
 ```
 
+**一键安装脚本:**
+```bash
+cd flow-skill && ./install.sh
+```
+
 ---
 
 ## 依赖 Skills
 
 `/flow` 是一个编排器，依赖以下 skills 协同工作：
 
-| Skill | 用途 |
-|---|---|
-| [ponytail](https://github.com/iPythoning/ponytail-skill) | 压舱 / 抑制过度工程 |
-| [office-hours](https://github.com/iPythoning/office-hours-skill) | 需求思考 |
-| [grill-me](https://github.com/iPythoning/grill-me-skill) | 拷问计划 |
-| [council](https://github.com/iPythoning/council-skill) | 多方案抉择 |
-| [plan](https://github.com/iPythoning/plan-skill) | 执行计划 |
-| [prp-*](https://github.com/iPythoning/prp-skill) | PRD / Plan / Implement / Commit |
-| [autoplan](https://github.com/iPythoning/autoplan-skill) | 自动评审 |
-| [tdd](https://github.com/iPythoning/tdd-skill) | 测试驱动开发 |
-| [verify](https://github.com/iPythoning/verify-skill) | 机械门验证 |
-| [code-review](https://github.com/iPythoning/code-review-skill) | 代码评审 |
-| [ship](https://github.com/iPythoning/ship-skill) | 提交 PR |
-| [land-and-deploy](https://github.com/iPythoning/land-and-deploy-skill) | 部署上线 |
-| [canary](https://github.com/iPythoning/canary-skill) | 金丝雀发布 |
-| [retro](https://github.com/iPythoning/retro-skill) | 复盘 |
-| [benchmark](https://github.com/iPythoning/benchmark-skill) | 性能回归 |
+### 已开源
+
+| Skill | 用途 | 来源 |
+|---|---|---|
+| **flow** | 本编排器（你正在看的） | [iPythoning/flow-skill](https://github.com/iPythoning/flow-skill) |
+
+### 本地内置 / 即将开源
+
+| Skill | 用途 | 来源 |
+|---|---|---|
+| office-hours | 需求思考 · YC Office Hours | `~/.claude/skills/office-hours/` |
+| grill-me | 拷问计划 | `~/.claude/skills/grill-me/` |
+| council | 多方案抉择 | `~/.claude/skills/council/` |
+| autoplan | 自动跑评审 | `~/.claude/skills/autoplan/` |
+| tdd | 测试驱动开发 | `~/.claude/skills/tdd/` |
+| ship | 提交 PR | `~/.claude/skills/ship/` |
+| land-and-deploy | 部署上线 | `~/.claude/skills/land-and-deploy/` |
+| canary | 金丝雀发布 | `~/.claude/skills/canary/` |
+| retro | 复盘 | `~/.claude/skills/retro/` |
+| benchmark | 性能回归 | `~/.claude/skills/benchmark/` |
+
+### 概念性 / 内联命令
+
+| 命令 | 用途 | 说明 |
+|---|---|---|
+| `/ponytail` | 压舱 / 抑制过度工程 | 通过 gstack 框架内联触发 |
+| `/plan` | 执行计划 | 内联在 gstack 工作流中 |
+| `/prp-prd` `/prp-plan` `/prp-implement` `/prp-commit` | PRP 流程 | PRP 系列命令 |
+| `/verify` | 机械门验证 | 内联在 gstack 工作流中 |
+| `/code-review` | 代码评审 | 内联在 gstack 工作流中 |
+| `/quality-gate` | 快速 lint/type/test | 内联在 gstack 工作流中 |
+
+> 💡 **想逐个开源？** 用 `./install.sh` 的 symlink 模式统一管理，或参考 [skill-creator](https://github.com/iPythoning/flow-skill) 的发布流程批量处理。
+
+---
+
+## 架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     /flow 编排器                         │
+│              (本仓库 · SKILL.md · 纯编排)                │
+├─────────────────────────────────────────────────────────┤
+│  gstack 框架层  ──  提供 preamble / session / repo-mode  │
+├─────────────────────────────────────────────────────────┤
+│  独立 Skill 层  ──  office-hours / tdd / ship / retro …  │
+│                    (各含 SKILL.md + 工具脚本)            │
+├─────────────────────────────────────────────────────────┤
+│  概念命令层  ──  ponytail / plan / verify / code-review  │
+│              (通过 gstack 内联或触发词触发)              │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 支持
+
+如果这个项目帮到了你，欢迎支持：
+
+<a href="https://www.buymeacoffee.com/ipythoning" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="160">
+</a>
+
+---
+
+## 出品
+
+<p align="center">
+  <a href="https://pulseagent.io" target="_blank">
+    <img src="https://img.shields.io/badge/Made%20with%20%E2%9D%A4%20by-PulseAgent-orange?style=for-the-badge" alt="PulseAgent">
+  </a>
+</p>
+
+**[PulseAgent](https://pulseagent.io)** — AI Agent 驱动的产品交付平台
 
 ---
 

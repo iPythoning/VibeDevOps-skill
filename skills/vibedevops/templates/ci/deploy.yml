@@ -1,0 +1,38 @@
+# deploy.yml — main 合并后部署，生产环境必须人工点头（放到 .github/workflows/）
+# 前置：GitHub 仓库 Settings → Environments → 新建 production → 勾 Required reviewers
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+# 同一时刻只允许一个部署在跑，新提交排队而非并发互踩
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production   # ← 人工 approve 关卡挂在这里
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- 密钥注入：Infisical 机器身份（repo secrets 只需存这两个）---
+      - name: Install Infisical CLI
+        run: npm install -g @infisical/cli
+
+      - name: Deploy with secrets injected
+        env:
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          # 把下面换成你的真实部署命令；密钥由 Infisical 运行时注入，不落明文
+          infisical run --env=prod -- ./deploy.sh
+
+      # --- 部署后验证：穿透到功能层，不只看 health check 绿 ---
+      - name: Smoke test（发真实请求看真实回复）
+        run: |
+          # 例：curl -fsS https://your-app.com/api/health | jq -e '.db == "up"'
+          # 例：curl -fsS -X POST https://your-app.com/api/core-action -d '{"ping":1}' | grep -q ok
+          echo "TODO: 换成你项目的真实功能层冒烟测试"

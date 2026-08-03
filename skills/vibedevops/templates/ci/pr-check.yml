@@ -1,0 +1,42 @@
+# pr-check.yml — PR 必过机械门（放到 .github/workflows/）
+# 默认 Node 项目；Python/Go 项目的替换步骤见注释
+name: PR Check
+
+on:
+  pull_request:
+
+jobs:
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+      # Infisical 替代方案：
+      # - run: npm install -g @infisical/cli && infisical scan
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Node ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'   # 没有 .nvmrc 就写死，如 '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run typecheck --if-present
+      - run: npm test
+
+      # --- Python（替换上面 Node 段）---
+      # - uses: actions/setup-python@v5
+      #   with: { python-version-file: '.python-version' }
+      # - run: pip install -r requirements.txt
+      # - run: pytest
+
+      # --- Go（替换上面 Node 段）---
+      # - uses: actions/setup-go@v5
+      # - run: go vet ./... && go test ./...

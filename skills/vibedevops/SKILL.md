@@ -1,6 +1,6 @@
 ---
 name: vibedevops
-description: Vibe coding 但不放弃理解。触发词 /vibedevops、看懂 AI 改动、项目地图、变更摘要、复述测试、交接架构、HANDOFF、AGENTS.md。把"被动看懂 AI 写的代码"升级为"主动掌控项目"：变更解释契约 + 三阶段理解进阶 + AGENTS.md/HANDOFF/ADR 跨 agent 交接架构——让理解固化进仓库，而不是停留在对话里。通用于所有项目与所有厂商 agent。
+description: Vibe coding 但不放弃理解，生产级 DevOps 保障。触发词 /vibedevops、看懂 AI 改动、项目地图、变更摘要、复述测试、交接架构、HANDOFF、AGENTS.md、密钥泄露、Infisical、CI 模板、回滚预案、事故复盘、上线监控、生产就绪体检。把"被动看懂 AI 写的代码"升级为"主动掌控项目"：变更解释契约 + 三阶段理解进阶 + AGENTS.md/HANDOFF/ADR 跨 agent 交接架构 + 密钥/CI/回滚/监控机械防线（模板化，不靠自觉）+ /vibedevops 体检生产就绪评分。通用于所有项目与所有厂商 agent。
 ---
 
 # VibeDevOps — vibe coding，但不放弃理解
@@ -72,14 +72,57 @@ description: Vibe coding 但不放弃理解。触发词 /vibedevops、看懂 AI 
 - `.gitignore` 忽略整个 `docs/` 时交接文件会被漏掉——提交用 `git add -f`，文件一旦被跟踪即恢复正常跟踪
 - 部署前检查 `.git/index.lock` 残留（确认无进程后清除）
 
-## 四、与 /flow 的关系
+## 四、生产级保障包（上线前后的机械防线）
 
-`/flow`（见 `../flow/SKILL.md`）是**工作流主干**：思考→计划→实现→自检→出活→部署→复盘，带安全关卡。VibeDevOps 是**理解层与治理层**：flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目"。两者共用同一套安全关卡（计划须确认 / 出 PR 前 `git diff --stat` / 部署必须点头）。
+Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI、上线靠祈祷、出事不会回滚。所有保障都做成**模板 + 脚本 + AGENTS.md 规则**三件套——不靠自觉维持，自觉是最不可靠的关卡。
 
-## 五、调用 /vibedevops 时的编排行为
+### 4.1 密钥与安全基线（第一事故源）
+
+三层防线，规范全文见 `templates/security/SECRETS.md`：
+
+- **进不去**：`templates/security/pre-commit` 提交前拦截（Infisical `infisical scan` → gitleaks → 兜底正则）；`.env.example` 入库、真 `.env` 永不入库
+- **不集中**：[Infisical CLI](https://github.com/Infisical/cli) 托管密钥，本地 `infisical run --env=dev -- <启动命令>` 运行时注入、不落盘；CI 用机器身份（Universal Auth），repo secrets 只存两个凭据
+- **漏了能救**：先轮换后清理（`git filter-repo`）→ 查调用日志 → 落 ADR
+- 兜底：GitHub Secret scanning + Push protection + Dependabot 打开
+
+### 4.2 CI 三件套（`templates/ci/`）
+
+- `pr-check.yml`：密钥扫描 + lint/type/test，PR 必过（含 Node/Python/Go 三语言注释替换段）
+- `deploy.yml`：main 合并后部署，挂 GitHub Environments 人工 approve；Infisical 注入密钥；部署后 smoke test **穿透到功能层**
+- 回滚标准动作：见 RUNBOOK
+
+### 4.3 回滚与事故应急（`templates/RUNBOOK.template.md`）
+
+- **上线即留退路**：每次部署前写下"这步怎么 revert"；`git revert` 优先于修复 patch
+- **数据库变更纪律**：迁移前一行命令备份；expand-contract 拆两次部署；AI 生成的 `DROP`/全表 `ALTER`/`UPDATE` 必须逐行人工过目
+- **事故三板斧**：止损（回滚/降级）→ 定位（Sentry → 日志 → 最近 `git log`）→ 复盘（blameless 5-why，产出 ADR）
+
+### 4.4 监控与环境（`templates/production-checklist.md`）
+
+- 监控四件套：`/health` 返回依赖真实状态（禁硬编码 200）、Sentry、可用性监控、告警到人
+- 环境可复现：版本锁定文件 + 安装一条命令 + `infisical run` 拿密钥；验收标准"新机器 clone 到跑通 ≤ 5 分钟"
+- 依赖更新：`templates/renovate.json`——非 major 分组周更，major 单独 PR 人工过目
+
+## 五、与 /flow 的关系
+
+`/flow`（见 `../flow/SKILL.md`）是**工作流主干**：思考→计划→实现→自检→出活→部署→复盘，带安全关卡。VibeDevOps 是**理解层与治理层**：flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目、敢不敢让它上线"。两者共用同一套安全关卡（计划须确认 / 出 PR 前 `git diff --stat` / 部署必须点头）。
+
+## 六、调用 /vibedevops 时的编排行为
 
 - **无参数**：探测当前仓库交接健康度（有无 AGENTS.md / HANDOFF.md / ADR / 验证命令是否已填），给出缺口清单和下一步。
 - **`/vibedevops 地图`**：执行阶段二——扫目录结构、找入口、沿调用链走主流程，输出带注释的项目地图。
 - **`/vibedevops 交接`**：在当前仓库部署交接架构（先 `--dry-run` 给清单，确认后落笔）。
 - **`/vibedevops 复述`**：基于最近的 git diff / commit，向用户提问"这次改了什么、为什么"，纠正其复述。
+- **`/vibedevops 体检`**：生产就绪评分（0–100），按下表逐项探测、输出得分与缺口清单：
+
+| 维度 | 分值 | 判定规则 |
+|---|---|---|
+| 测试 | 15 | 有测试目录/配置且验证命令非"待补充" |
+| CI | 15 | `.github/workflows/` 存在 PR 检查 + 部署流（各半） |
+| 密钥 | 20 | `.env` 在 gitignore（5）+ 无密钥入库痕迹（10，`git log -p` 抽样 / 跑 infisical scan）+ 有注入方案（5） |
+| 监控 | 15 | `/health` 真实依赖检查 + 错误追踪接入（按实现度给分） |
+| 回滚预案 | 10 | RUNBOOK 存在且含回滚/备份步骤 |
+| 环境可复现 | 10 | 版本锁定文件 + README 有 5 分钟跑通说明 |
+| 交接文件 | 15 | AGENTS.md / HANDOFF.md / ADR 齐备且非模板未填状态 |
+
 - 执行原则：扫描与解释无副作用可直接做；**写入交接文件、git init、批量部署前必须给用户确认清单**。

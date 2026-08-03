@@ -1,0 +1,31 @@
+#!/bin/bash
+# pre-commit — 密钥泄露拦截（放到 .git/hooks/pre-commit 并 chmod +x）
+# 优先级：Infisical CLI > gitleaks > 兜底正则。三者都没有则放行并提示安装。
+
+if command -v infisical >/dev/null 2>&1; then
+  # Infisical 自带泄露扫描（扫工作区 + git 历史中的已知模式）
+  infisical scan --exit-code=1 2>/dev/null || infisical scan || {
+    echo "❌ Infisical 检测到疑似密钥泄露，已拦截提交。"
+    echo "   误报：在对应行尾加 infisical-scan:ignore 注释；真泄露：立即轮换密钥。"
+    exit 1
+  }
+  exit 0
+fi
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --verbose || {
+    echo "❌ gitleaks 检测到疑似密钥泄露，已拦截提交。"
+    exit 1
+  }
+  exit 0
+fi
+
+# 兜底：对暂存 diff 做常见密钥模式匹配
+PATTERNS='(AKIA[0-9A-Z]{16}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----|xox[baprs]-[a-zA-Z0-9-]{10,})'
+if git diff --cached -U0 | grep -qE "$PATTERNS"; then
+  echo "❌ 暂存内容疑似包含密钥（AWS/OpenAI/GitHub/Slack/私钥模式），已拦截提交。"
+  echo "   安装 infisical（brew install infisical/get-cli/infisical）可获得完整扫描。"
+  exit 1
+fi
+
+exit 0

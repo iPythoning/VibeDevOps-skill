@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "VibeDevOps 依赖更新基线：分组小步更新，major 单独拎出来人工过目",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Shanghai",
+  "schedule": ["before 8am on Monday"],
+  "packageRules": [
+    {
+      "description": "非 major 更新分组，每周一个 PR，减少噪音",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "all non-major dependencies",
+      "automerge": false
+    },
+    {
+      "description": "major 更新单独 PR——vibe coder 必须人工过 breaking changes",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  }
+}

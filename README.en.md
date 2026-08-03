@@ -4,11 +4,13 @@
 >
 > 🇨🇳 [中文版本](README.md) · Formerly `flow-skill` (the `/flow` workflow orchestrator still lives in `skills/flow/`)
 
-**Take all the speed of vibe coding — don't give up the understanding.** VibeDevOps turns "understanding" from a feeling into process and files:
+**Take all the speed of vibe coding — don't give up the understanding.** VibeDevOps turns "understanding" and "production readiness" from feelings into process and files:
 
 - **Change Explanation Contract** — before and after every change, the AI is forced to produce a readable plan and summary
 - **Three-Stage Comprehension Path** — an actionable route from "passively reading along" to "actively in control"
 - **Cross-Agent Handoff Architecture** — `AGENTS.md` + `HANDOFF.md` + ADRs + vendor pointer files, so understanding is persisted in the repo and any agent can pick up instantly
+- **Production-Grade Guardrails** — secrets baseline (Infisical) / CI trio / rollback runbook / monitoring checklist, as templates and scripts rather than willpower
+- **`/vibedevops audit`** — a 0–100 production-readiness score showing whether your vibe project is safe to ship
 
 Pairs with `/flow` in this repo (the workflow backbone: think → plan → implement → verify → ship → deploy → retro): **flow governs "how work gets done", vibedevops governs "whether you — and the next agent — still understand the project".**
 
@@ -60,7 +62,37 @@ Deployment discipline and pitfalls (macOS bash 3.2 `set -u` empty-array trap, `.
 
 ---
 
-## 4. /flow — The Workflow Backbone (formerly flow-skill)
+## 4. Production-Grade Guardrails (mechanical defenses before/after shipping)
+
+The typical vibe-coder incident isn't misunderstanding code — it's leaked secrets, zero CI, ship-and-pray deploys, and no rollback plan. Every guardrail ships as a **template + script + AGENTS.md rule** trio — never willpower.
+
+### Secrets Baseline (with [Infisical CLI](https://github.com/Infisical/cli))
+
+Three layers; full spec in [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md):
+
+- **Keep them out**: pre-commit hook blocks leaks (`infisical scan` → gitleaks → fallback regex); real `.env` never committed
+- **Keep them centralized**: `infisical run --env=dev -- <start command>` injects at runtime, nothing on disk; CI uses Universal Auth machine identity — only two credentials in repo secrets
+- **Recover when leaked**: rotate first, scrub history later (`git filter-repo`) → check usage logs → write an ADR
+
+### CI Trio ([templates/ci/](skills/vibedevops/templates/ci/))
+
+`pr-check.yml` (secret scan + lint/type/test, with Node/Python/Go swap-in blocks) · `deploy.yml` (GitHub Environments manual approval + Infisical injection + functional-layer smoke test) · standard rollback procedure in the RUNBOOK
+
+### Rollback & Incident Response ([RUNBOOK.template.md](skills/vibedevops/templates/RUNBOOK.template.md))
+
+Ship with an exit (write down "how do I revert this?" before deploying) · database migrations: backup first + expand-contract in two deploys + line-by-line human review of AI-generated destructive SQL · incident three-step: stop the bleeding → root cause → blameless 5-why postmortem filed as an ADR
+
+### Monitoring & Environment ([production-checklist.md](skills/vibedevops/templates/production-checklist.md))
+
+Monitoring four-piece (real `/health`, Sentry, uptime monitor, alerting that reaches a human) · reproducibility acceptance bar: "fresh machine, clone to running ≤ 5 minutes" · [renovate.json](skills/vibedevops/templates/renovate.json) weekly grouped updates (majors get individual human-reviewed PRs)
+
+### `/vibedevops audit` — Production-Readiness Score
+
+Scores any repo 0–100 across 7 dimensions (tests 15 / CI 15 / secrets 20 / monitoring 15 / rollback 10 / environment 10 / handoff docs 15) with a gap list. Scoring rules in [SKILL.md](skills/vibedevops/SKILL.md) §6.
+
+---
+
+## 5. /flow — The Workflow Backbone (formerly flow-skill)
 
 Consolidates scattered commands into a single main chain with **ponytail guardrails throughout** (default `full`, `ultra` for legacy/refactor work): minimum code the task truly needs, never cutting validation, error handling, security, or accessibility.
 
@@ -96,9 +128,13 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 
 ```
 ├── skills/
-│   ├── vibedevops/          # Comprehension + governance layer (main)
+│   ├── vibedevops/          # Comprehension + governance + production guardrails (main)
 │   │   ├── SKILL.md
-│   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / vendor pointer templates
+│   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / RUNBOOK / vendor pointers
+│   │   │   ├── security/    # Secrets baseline: SECRETS.md (Infisical), pre-commit, env.example
+│   │   │   ├── ci/          # pr-check.yml / deploy.yml (GitHub Actions skeletons)
+│   │   │   ├── production-checklist.md  # Monitoring four-piece + reproducibility
+│   │   │   └── renovate.json            # Dependency update baseline
 │   │   └── scripts/
 │   │       └── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
 │   └── flow/                # Workflow backbone (formerly flow-skill)

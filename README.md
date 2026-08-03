@@ -1,14 +1,16 @@
 # VibeDevOps — vibe coding，但不放弃理解
 
-> 触发词：`/vibedevops`、`看懂 AI 改动`、`项目地图`、`变更摘要`、`复述测试`、`交接架构`、`HANDOFF`
+> 触发词：`/vibedevops`、`看懂 AI 改动`、`项目地图`、`变更摘要`、`复述测试`、`交接架构`、`HANDOFF`、`生产就绪体检`
 >
 > 🇬🇧 [English Version](README.en.md) · 前身：`flow-skill`（`/flow` 工作流编排器，仍在本仓库 `skills/flow/`）
 
-**vibe coding 的速度可以全拿，理解不能全丢。** VibeDevOps 把"理解"从感觉变成流程和文件：
+**vibe coding 的速度可以全拿，理解不能全丢。** VibeDevOps 把"理解"和"生产保障"从感觉变成流程和文件：
 
 - **变更解释契约** —— 每次改动前后，AI 被迫输出可读的方案与摘要
 - **三阶段理解进阶** —— 从"被动看懂"到"主动掌控"的可执行路线
 - **跨 agent 交接架构** —— `AGENTS.md` + `HANDOFF.md` + ADR + 厂商指针，让理解固化进仓库，任何 agent 秒接续
+- **生产级保障包** —— 密钥基线（Infisical）/ CI 三件套 / 回滚预案 / 监控清单，模板化机械防线，不靠自觉
+- **`/vibedevops 体检`** —— 生产就绪 0–100 评分，一键看清你的 vibe 项目敢不敢上线
 
 搭配本仓库的 `/flow`（工作流主干：思考→计划→实现→自检→出活→部署→复盘）使用：**flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目"。**
 
@@ -60,7 +62,37 @@
 
 ---
 
-## 四、/flow —— 工作流主干（原 flow-skill）
+## 四、生产级保障包（上线前后的机械防线）
+
+Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI、上线靠祈祷、出事不会回滚。所有保障都是**模板 + 脚本 + AGENTS.md 规则**三件套——不靠自觉维持。
+
+### 密钥与安全基线（含 [Infisical CLI](https://github.com/Infisical/cli)）
+
+三层防线，规范全文见 [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md)：
+
+- **进不去**：pre-commit 拦截（`infisical scan` → gitleaks → 兜底正则）；真 `.env` 永不入库
+- **不集中**：本地 `infisical run --env=dev -- <启动命令>` 运行时注入、不落盘；CI 用机器身份（Universal Auth），repo secrets 只存两个凭据
+- **漏了能救**：先轮换后清理（`git filter-repo`）→ 查调用日志 → 落 ADR
+
+### CI 三件套（[templates/ci/](skills/vibedevops/templates/ci/)）
+
+`pr-check.yml`（密钥扫描 + lint/type/test，含 Node/Python/Go 替换段）· `deploy.yml`（GitHub Environments 人工 approve + Infisical 注入 + 功能层 smoke test）· 回滚标准动作见 RUNBOOK
+
+### 回滚与事故应急（[RUNBOOK.template.md](skills/vibedevops/templates/RUNBOOK.template.md)）
+
+上线即留退路（先写"这步怎么 revert"）· 数据库迁移先备份 + expand-contract 两次部署 + AI 生成的破坏性 SQL 逐行人工过目 · 事故三板斧（止损→定位→blameless 5-why 复盘落 ADR）
+
+### 监控与环境（[production-checklist.md](skills/vibedevops/templates/production-checklist.md)）
+
+监控四件套（真实 `/health`、Sentry、可用性监控、告警到人）· 环境可复现验收标准"新机器 clone 到跑通 ≤ 5 分钟" · [renovate.json](skills/vibedevops/templates/renovate.json) 依赖周更（major 单独人工过目）
+
+### `/vibedevops 体检` —— 生产就绪评分
+
+对任意仓库按 7 个维度（测试 15 / CI 15 / 密钥 20 / 监控 15 / 回滚 10 / 环境 10 / 交接 15）打 0–100 分并输出缺口清单。评分规则见 [SKILL.md](skills/vibedevops/SKILL.md) 第六节。
+
+---
+
+## 五、/flow —— 工作流主干（原 flow-skill）
 
 把手头零散的命令收口成一条主力链。**ponytail 全程压舱**（默认 full，动老代码/重构用 ultra），只写任务真正需要的最少代码，但绝不砍校验/错误处理/安全/可访问性。
 
@@ -126,9 +158,13 @@ cd VibeDevOps-skill && ./install.sh
 
 ```
 ├── skills/
-│   ├── vibedevops/          # 理解层 + 治理层（本仓库主力）
+│   ├── vibedevops/          # 理解层 + 治理层 + 生产保障（本仓库主力）
 │   │   ├── SKILL.md
-│   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / 厂商指针模板
+│   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / RUNBOOK / 厂商指针
+│   │   │   ├── security/    # 密钥基线：SECRETS.md（含 Infisical）、pre-commit、env.example
+│   │   │   ├── ci/          # pr-check.yml / deploy.yml（GitHub Actions 骨架）
+│   │   │   ├── production-checklist.md  # 监控四件套 + 环境可复现
+│   │   │   └── renovate.json            # 依赖更新基线
 │   │   └── scripts/
 │   │       └── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
 │   └── flow/                # 工作流主干（原 flow-skill）

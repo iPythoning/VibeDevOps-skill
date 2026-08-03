@@ -1,180 +1,115 @@
-# /flow — Full-Stack Development Workflow Orchestrator
+# VibeDevOps — Vibe Coding Without Giving Up Understanding
 
-> Triggers: `/flow`, `workflow`, `full-stack workflow`, `feature dev flow`, `assemble workflow`
+> Triggers: `/vibedevops`, `understand AI changes`, `project map`, `change summary`, `handoff architecture`
 >
-> 🇨🇳 [中文版本](README.md)
+> 🇨🇳 [中文版本](README.md) · Formerly `flow-skill` (the `/flow` workflow orchestrator still lives in `skills/flow/`)
 
-Consolidates scattered commands into a single main chain. **ponytail provides guardrails throughout** (default `full`, use `ultra` for legacy/refactor work), writing only the minimum code the task truly needs — while never cutting corners on validation, error handling, security, or accessibility.
+**Take all the speed of vibe coding — don't give up the understanding.** VibeDevOps turns "understanding" from a feeling into process and files:
 
----
+- **Change Explanation Contract** — before and after every change, the AI is forced to produce a readable plan and summary
+- **Three-Stage Comprehension Path** — an actionable route from "passively reading along" to "actively in control"
+- **Cross-Agent Handoff Architecture** — `AGENTS.md` + `HANDOFF.md` + ADRs + vendor pointer files, so understanding is persisted in the repo and any agent can pick up instantly
 
-## Phase Table
-
-| # | Phase | Goal | Primary Command | Alternatives | Output | Gate |
-|---|---|---|---|---|---|---|
-| 0 | Guardrails | Prevent over-engineering | `/ponytail full` | Refactor `/ponytail ultra` · Exploration `/ponytail lite` | — | — |
-| 1 | Think | Clarify requirements & approach | `/office-hours` | `/grill-me` (interrogate plan) · `/council` (multi-option decision) | Requirements / Decision log | — |
-| 2 | Plan | Produce executable plan | Small change `/plan` · New feature `/prp-prd`→`/prp-plan` | `/autoplan` (auto review, needs existing plan) | Plan file | ✋ Plan must be confirmed before coding |
-| 3 | Implement | Minimum viable code + tests | `/tdd` (RED→GREEN→REFACTOR) | `/prp-implement` (plan-driven + per-step verification) | Code + test commit | — |
-| 4 | Self-check | Mechanical gate + over-engineering + correctness | `/verify` → `/ponytail-review` → `/code-review` | `/quality-gate` (quick lint/type/test) | Report + deletion list | ✋ Reds must be fixed first |
-| 5 | Ship | commit → PR | `/prp-commit` → `/ship` | Manual git (only `git add -u` / per-file) | PR | ✋✋ Self-review `git diff --stat` before PR |
-| 6 | Deploy | Go live + monitor | `/land-and-deploy` → `/canary` | Project-specific deploy.sh (e.g. PA) | Production + monitoring | ✋✋✋ Production deploy requires explicit approval |
-| 7 | Retro | Document + pay debt | `/retro` + `/ponytail-debt` | `/benchmark` (performance regression) | Retro + debt log | — |
-
-> ponytail commands work with or without namespace prefix (`/ponytail-review` or `/ponytail:ponytail-review`, hooks recognize both).
+Pairs with `/flow` in this repo (the workflow backbone: think → plan → implement → verify → ship → deploy → retro): **flow governs "how work gets done", vibedevops governs "whether you — and the next agent — still understand the project".**
 
 ---
 
-## Two Paths (Choose by Change Size)
+## 1. Change Explanation Contract (zero cost, use today)
 
-- **Fast path** (bugfix / small change): `0 ponytail` → `2 /plan` → `3 /tdd` → `4 /verify`+`/ponytail-review` → `5 /prp-commit`+`/ship` → `6 /land-and-deploy`+`/canary`
-- **Full path** (new feature): `0` → `1 /office-hours` → `2 /prp-prd`→`/prp-plan` (or `/autoplan`) → `3 /tdd` or `/prp-implement` → `4 /code-review`+`/ponytail-review`+`/verify` → `5 /ship` → `6 /land-and-deploy`+`/canary` → `7 /retro`
+Append this fixed instruction to every change request:
 
----
+> Before making changes, tell me which files you plan to touch, what changes in each, and why. Wait for my confirmation before starting.
+> After completing the changes, output: ① the list of changed files ② a one-line purpose for each file's change ③ if multiple files are involved, how their call relationships changed ④ if new directories or files were introduced, where they sit in the project structure.
 
-## Safety Gates (Ironclad — Aligns with Global CLAUDE.md "Fix A Without Breaking B")
-
-- **Planning Gate**: No code changes until user confirms the plan (`/plan` enforces this gate by default).
-- **PR Gate**: Forbid `git add -A`; only `git add -u` or file-by-file; run `git diff --stat` before commit to catch unexpected Dockerfile/nginx/compose changes.
-- **Deploy Gate**: Production deploy requires explicit user approval; change one service at a time, verify before moving to the next; post-deploy verification must reach the **functional layer** (send real requests and inspect responses), not just health check / status field green.
-- Tool overlap resolution: Don't use `/plan`+`/prp-plan` simultaneously (the latter already includes the former); review trio has clear separation — `/code-review` (correctness + security) · `/ponytail-review` (over-engineering deletion list) · `/verify` (build/type/lint/test mechanical gate).
+Companion habit: run `git diff` after every change and have the AI explain it hunk by hunk. Diffs are the highest-ROI learning material — real, specific, and your own code.
 
 ---
 
-## Orchestration Behavior When Invoking /flow
+## 2. Three-Stage Comprehension Path
 
-- **No args**: Detect current phase (plan file exists / uncommitted diff / open PR), display the table above with "you are here" highlighted, suggest the next command.
-- **`/flow <phase name or number>`**: Guide starting from that phase.
-- **`/flow fast` / `/flow full`**: Progress through the corresponding path phase by phase.
-- Execution principle: **Side-effect-free phases** (think / plan / self-check / retro) I can run; **Side-effect phases** (create PR, deploy) I only list commands and stop for confirmation, **never auto-deploy to production**. Report output and next steps after each gate.
+| Stage | Timeline | Core | Key Actions |
+|---|---|---|---|
+| 1. Force the AI to explain | Weeks 1–2 | Change your instructions, not yourself | The contract above + read every `git diff` |
+| 2. Build a project map | Weeks 2–4 | Black-box folder → mental map | `tree -L 3` with one-line purpose per directory · walk the main flow from the entry point along the import chain · draw a dependency diagram and update it after every change (living doc) |
+| 3. Small-step verification | Week 4+ | Cement understanding with engineering habits | Small commits (each explains why it exists) · **retell test** (explain the change yourself, AI corrects you) · **prediction drill** (guess which files will change; wrong guesses = knowledge gaps) |
 
 ---
 
-## Open Source Ecosystem Mapping
+## 3. Cross-Agent Handoff Architecture
 
-Every step in `/flow` maps to mature, battle-tested open source projects on GitHub. Use them directly, or let `/flow` orchestrate them uniformly.
+Understanding that lives in chat evaporates with context compression; understanding on disk doesn't. This architecture lets any vendor's agent (Claude / Codex / Cursor / Gemini / Windsurf / Kimi) pick up any repo instantly:
 
-| Phase | Step | Open Source Ecosystem |
-|---|---|---|
-| 0 | Guardrails | [scc](https://github.com/boyter/scc) · [gocyclo](https://github.com/fzipp/gocyclo) · [complexity-report](https://github.com/escomplex/escomplex) |
-| 1 | Think | [Obsidian](https://github.com/obsidianmd) · [logseq](https://github.com/logseq/logseq) · [Docusaurus](https://github.com/facebook/docusaurus) |
-| 2 | Plan | [adr-tools](https://github.com/npryce/adr-tools) · [log4brains](https://github.com/thomvaill/log4brains) · [mkdocs](https://github.com/mkdocs/mkdocs) |
-| 3 | Implement | [Jest](https://github.com/jestjs/jest) · [pytest](https://github.com/pytest-dev/pytest) · [Vitest](https://github.com/vitest-dev/vitest) · [Playwright](https://github.com/microsoft/playwright) |
-| 4 | Self-check | [ESLint](https://github.com/eslint/eslint) · [Prettier](https://github.com/prettier/prettier) · [Husky](https://github.com/typicode/husky) · [SonarQube](https://github.com/SonarSource/sonarqube) · [Codecov](https://github.com/codecov/codecov-action) |
-| 5 | Ship | [semantic-release](https://github.com/semantic-release/semantic-release) · [release-it](https://github.com/release-it/release-it) · [changesets](https://github.com/changesets/changesets) · [git-cliff](https://github.com/orhun/git-cliff) |
-| 6 | Deploy | [Argo CD](https://github.com/argoproj/argo-cd) · [Flux](https://github.com/fluxcd/flux2) · [Kubernetes](https://github.com/kubernetes/kubernetes) · [Docker](https://github.com/moby/moby) |
-| 6 | Canary | [Flagger](https://github.com/fluxcd/flagger) · [Argo Rollouts](https://github.com/argoproj/argo-rollouts) |
-| 7 | Retro | [Retrospected](https://github.com/antoinejaussoin/retro-board) · [EasyRetro](https://easyretro.io) |
-| 7 | Benchmark | [k6](https://github.com/grafana/k6) · [Artillery](https://github.com/artilleryio/artillery) · [Locust](https://github.com/locustio/locust) |
+| File | Role |
+|---|---|
+| `AGENTS.md` | **Single authoritative rulebook**: onboarding three-steps, wrap-up three-musts, verification commands, git discipline, anti-patterns. Vendor files are pointers; conflicts resolve to this file |
+| `docs/HANDOFF.md` | Status board: current goal / done / in-progress (with file locations) / known pitfalls / next steps / how to verify |
+| `docs/adr/` | Architecture Decision Records — the cure for "why did we change this again". A decision not written down never happened |
+| Vendor pointers | `CLAUDE.md` / `GEMINI.md` / `.cursorrules` / `.windsurfrules` / `.github/copilot-instructions.md` — all point to the same AGENTS.md |
 
-> 💡 **The unique value of /flow**: Not replacing these tools, but wiring them into a **single workflow with safety gates, context memory, and retrospectives**. Every phase is defensible, every decision is traceable.
+**One-shot deployment (idempotent, non-destructive):**
+
+```bash
+# 1. Edit the REPOS array in the script with your repo paths
+# 2. Dry-run first to review the plan
+./skills/vibedevops/scripts/deploy-handoff.sh --dry-run
+# 3. Apply (add-only; existing files backed up as .bak before appending; one commit per repo, revertible)
+./skills/vibedevops/scripts/deploy-handoff.sh
+```
+
+Deployment discipline and pitfalls (macOS bash 3.2 `set -u` empty-array trap, `.gitignore` ignoring `docs/` requires `git add -f`, stale `index.lock`) are documented in [skills/vibedevops/SKILL.md](skills/vibedevops/SKILL.md).
+
+---
+
+## 4. /flow — The Workflow Backbone (formerly flow-skill)
+
+Consolidates scattered commands into a single main chain with **ponytail guardrails throughout** (default `full`, `ultra` for legacy/refactor work): minimum code the task truly needs, never cutting validation, error handling, security, or accessibility.
+
+| # | Phase | Goal | Primary Command | Gate |
+|---|---|---|---|---|
+| 0 | Guardrails | Prevent over-engineering | `/ponytail full` | — |
+| 1 | Think | Clarify requirements | `/office-hours` (alt: `/grill-me`, `/council`) | — |
+| 2 | Plan | Executable plan | `/plan` · `/prp-prd`→`/prp-plan` (alt: `/autoplan`) | ✋ Plan confirmed before coding |
+| 3 | Implement | Minimal code + tests | `/tdd` (alt: `/prp-implement`) | — |
+| 4 | Self-check | Mechanical gate + correctness | `/verify` → `/ponytail-review` → `/code-review` | ✋ Fix reds first |
+| 5 | Ship | commit → PR | `/prp-commit` → `/ship` | ✋✋ `git diff --stat` self-check |
+| 6 | Deploy | Go live + monitor | `/land-and-deploy` → `/canary` | ✋✋✋ Explicit approval |
+| 7 | Retro | Document + pay debt | `/retro` + `/ponytail-debt` | — |
+
+**Safety gates (ironclad):** no code before plan confirmation · no `git add -A`, self-review `git diff --stat` before PR · production deploys require explicit approval, verified at the functional layer (real requests, real responses).
+
+Full details: [skills/flow/SKILL.md](skills/flow/SKILL.md).
 
 ---
 
 ## Installation
 
-### 1. Clone the repo
-
 ```bash
-git clone https://github.com/iPythoning/flow-skill.git
+git clone https://github.com/iPythoning/VibeDevOps-skill.git
+cd VibeDevOps-skill && ./install.sh
 ```
 
-### 2. Install to each Agent
-
-**Claude Code:**
-```bash
-mkdir -p ~/.claude/skills/flow
-cp flow-skill/skills/flow/SKILL.md ~/.claude/skills/flow/
-```
-
-**Kimi Work / Daimon:**
-```bash
-# Use symlink to keep in sync
-ln -s ~/flow-skill/skills/flow \
-  ~/Library/Application\ Support/kimi-desktop/daimon-share/daimon/skills/flow
-```
-
-**Universal approach (recommended):**
-```bash
-# Create unified skills source
-mkdir -p ~/.shared-skills/flow
-cp flow-skill/skills/flow/SKILL.md ~/.shared-skills/flow/
-
-# Symlink for each Agent
-ln -s ~/.shared-skills/flow ~/.claude/skills/flow
-ln -s ~/.shared-skills/flow ~/.agents/skills/flow
-ln -s ~/.shared-skills/flow ~/.cc-switch/skills/flow
-```
-
-**One-click install:**
-```bash
-cd flow-skill && ./install.sh
-```
+Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into your agent's skills directory (`~/.claude/skills/`, `~/.agents/skills/`, Kimi Work's daimon skills dir, etc.).
 
 ---
 
-## Skill Dependencies
-
-`/flow` is an orchestrator that coordinates the following skills:
-
-### Open Sourced
-
-| Skill | Purpose | Source |
-|---|---|---|
-| **flow** | This orchestrator (you're reading it) | [iPythoning/flow-skill](https://github.com/iPythoning/flow-skill) |
-
-### Local / Coming Soon
-
-| Skill | Purpose | Source |
-|---|---|---|
-| office-hours | Requirements thinking · YC Office Hours | `~/.claude/skills/office-hours/` |
-| grill-me | Interrogate plan | `~/.claude/skills/grill-me/` |
-| council | Multi-option decision making | `~/.claude/skills/council/` |
-| autoplan | Auto review runner | `~/.claude/skills/autoplan/` |
-| tdd | Test-driven development | `~/.claude/skills/tdd/` |
-| ship | Submit PR | `~/.claude/skills/ship/` |
-| land-and-deploy | Deploy to production | `~/.claude/skills/land-and-deploy/` |
-| canary | Canary release | `~/.claude/skills/canary/` |
-| retro | Retrospective | `~/.claude/skills/retro/` |
-| benchmark | Performance regression | `~/.claude/skills/benchmark/` |
-
-### Conceptual / Inline Commands
-
-| Command | Purpose | Note |
-|---|---|---|
-| `/ponytail` | Guardrails / prevent over-engineering | Triggered via gstack framework inline |
-| `/plan` | Execution plan | Inline in gstack workflow |
-| `/prp-prd` `/prp-plan` `/prp-implement` `/prp-commit` | PRP flow | PRP command series |
-| `/verify` | Mechanical gate verification | Inline in gstack workflow |
-| `/code-review` | Code review | Inline in gstack workflow |
-| `/quality-gate` | Quick lint/type/test | Inline in gstack workflow |
-
-> 💡 **Want to open source individually?** Use `./install.sh`'s symlink mode for unified management, or follow the [skill-creator](https://github.com/iPythoning/flow-skill) publish workflow for batch processing.
-
----
-
-## Architecture
+## Repository Layout
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   /flow Orchestrator                     │
-│            (This repo · SKILL.md · Pure orchestration)   │
-├─────────────────────────────────────────────────────────┤
-│  gstack Framework Layer ── preamble / session / repo-mode│
-├─────────────────────────────────────────────────────────┤
-│  Individual Skill Layer ── office-hours / tdd / ship...  │
-│                           (Each with SKILL.md + scripts) │
-├─────────────────────────────────────────────────────────┤
-│  Conceptual Command Layer ── ponytail / plan / verify    │
-│                              (Triggered via gstack hooks)│
-└─────────────────────────────────────────────────────────┘
+├── skills/
+│   ├── vibedevops/          # Comprehension + governance layer (main)
+│   │   ├── SKILL.md
+│   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / vendor pointer templates
+│   │   └── scripts/
+│   │       └── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
+│   └── flow/                # Workflow backbone (formerly flow-skill)
+│       └── SKILL.md
+├── install.sh
+└── README.md / README.en.md
 ```
 
 ---
 
 ## Support
-
-If this project helped you, consider supporting:
 
 <a href="https://www.buymeacoffee.com/ipythoning" target="_blank">
   <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="160">
@@ -182,7 +117,7 @@ If this project helped you, consider supporting:
 
 ---
 
-## Crafted By
+## Credits
 
 <p align="center">
   <a href="https://pulseagent.io" target="_blank">
@@ -190,7 +125,7 @@ If this project helped you, consider supporting:
   </a>
 </p>
 
-**[PulseAgent](https://pulseagent.io)** — AI Agent-Powered Product Delivery Platform
+**[PulseAgent](https://pulseagent.io)** — AI-Agent-driven product delivery platform
 
 ---
 

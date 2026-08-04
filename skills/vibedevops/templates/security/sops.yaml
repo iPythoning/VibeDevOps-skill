@@ -1,0 +1,10 @@
+# .sops.yaml —— 放项目根目录（改名为 .sops.yaml）
+# 作用：告诉 sops 哪些文件用哪把 age 公钥加密。私钥永不进 git
+#（默认在 ~/.config/sops/age/keys.txt；CI 里存为唯一 repo secret：SOPS_AGE_KEY）。
+#
+# 生成密钥对：age-keygen -o ~/.config/sops/age/keys.txt
+# 把输出的 "public key: age1..." 填到下面 age 字段（多人协作就逗号并列多把公钥）。
+creation_rules:
+  # 约定：所有 *.enc / *.enc.yaml / .env.enc 走加密
+  - path_regex: (\.env\.enc|\.enc\.(ya?ml|json|env))$
+    age: age1REPLACE_WITH_YOUR_PUBLIC_KEY

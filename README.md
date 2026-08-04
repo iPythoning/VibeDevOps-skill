@@ -9,7 +9,7 @@
 - **变更解释契约** —— 每次改动前后，AI 被迫输出可读的方案与摘要
 - **三阶段理解进阶** —— 从"被动看懂"到"主动掌控"的可执行路线
 - **跨 agent 交接架构** —— `AGENTS.md` + `HANDOFF.md` + ADR + 厂商指针，让理解固化进仓库，任何 agent 秒接续
-- **生产级保障包** —— 密钥基线（Infisical）/ CI 三件套 / 回滚预案 / 监控清单，模板化机械防线，不靠自觉
+- **生产级保障包** —— 密钥基线（Push protection → gitleaks → sops+age，零依赖优先）/ CI 三件套 / 回滚预案 / 监控清单，模板化机械防线，不靠自觉
 - **`/vibedevops 体检`** —— 生产就绪 0–100 评分，一键看清你的 vibe 项目敢不敢上线
 
 搭配本仓库的 `/flow`（工作流主干：思考→计划→实现→自检→出活→部署→复盘）使用：**flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目"。**
@@ -25,6 +25,12 @@ curl -fsSL https://raw.githubusercontent.com/iPythoning/VibeDevOps-skill/main/sk
 ```
 
 < 60 分的项目，出事只是时间问题——先按缺口清单从上往下补。
+
+不止是评分，还能当**门禁**：`--min 60` 低于阈值退出码 1，挂进 pre-push 或 CI，分数不够直接拦：
+
+```bash
+./health-check.sh --min 60 . || { echo "生产就绪分不达标，禁止 push"; exit 1; }
+```
 
 ## 分层采用路线（不用一次全上）
 
@@ -89,13 +95,15 @@ curl -fsSL https://raw.githubusercontent.com/iPythoning/VibeDevOps-skill/main/sk
 
 Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI、上线靠祈祷、出事不会回滚。所有保障都是**模板 + 脚本 + AGENTS.md 规则**三件套——不靠自觉维持。
 
-### 密钥与安全基线（含 [Infisical CLI](https://github.com/Infisical/cli)）
+### 密钥与安全基线（零依赖优先）
 
-三层防线，规范全文见 [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md)：
+防线按依赖成本从零到高排列，规范全文见 [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md)：
 
-- **进不去**：pre-commit 拦截（`infisical scan` → gitleaks → 兜底正则）；真 `.env` 永不入库
-- **不集中**：本地 `infisical run --env=dev -- <启动命令>` 运行时注入、不落盘；CI 用机器身份（Universal Auth），repo secrets 只存两个凭据
+- **第 0 层（零安装）**：GitHub Push protection + Secret scanning——服务端强制，忘不掉、绕不过
+- **第 1 层（单二进制）**：gitleaks pre-commit 拦截（→ 兜底正则）；真 `.env` 永不入库
+- **第 2 层（solo 默认）**：sops + age 把部署密钥加密进 git——零服务依赖、离线可用，repo secrets 收敛为一个 age 私钥
 - **漏了能救**：先轮换后清理（`git filter-repo`）→ 查调用日志 → 落 ADR
+- **团队化之后**才升级 [Infisical](https://github.com/Infisical/cli)（集中托管/按权限分发/运行时注入）；两套密钥体系比没有体系更糟，二选一
 
 ### CI 三件套（[templates/ci/](skills/vibedevops/templates/ci/)）
 

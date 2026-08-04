@@ -47,6 +47,13 @@ build-gate.sh /path/to/repo --cmd "npm ci && npm test && npm run build"
 6. **构建机 docker 一律 `--network host`**（脚本已内置）：NAS / 家庭服务器 / 品牌小主机的 docker 常由厂商系统托管（自定义网络栈），默认 docker0 桥不存在是常态不是故障——显式 host 网络让桥的状态与构建彻底无关。也绝不重启这类机器的 docker daemon（上面跑着厂商全家桶）。
 7. **代理规避 + 双路径 ssh**：构建机 ssh 配两条路——overlay 网络（Tailscale 类，CGNAT `100.64/10` 段必须走 utun 虚拟网卡，**绝不能绑物理网卡**）为主，局域网 IP + `BindInterface` 绑物理网卡为兜底；两条路径的 host key 交叉比对一致后再收录。脚本里禁止裸域名和 `root@IP`，路由策略统一收敛在 `~/.ssh/config`；不依赖修改代理工具的配置。
 
+## 下游 fork 约定（消灭双副本漂移）
+
+把模板拷去做本机特化（改构建机坐标、接私有证据目录等）没问题，但**记下你 fork 时的上游 commit**，
+并定期检查上游是否更新（示例：`git -C <本仓> log <你的基线>..HEAD -- skills/vibedevops/templates/build-gate`）。
+推荐把这条检查挂在你自己 build-gate 的启动路径里（机会式，无 cron 依赖）——通用改进流回下游，
+本机特化不上传。方向约定：**通用改进先改这里（上游），再回灌你的特化版**，反着来迟早分叉成两套互不认识的东西。
+
 ## 设计要点（为什么长这样）
 
 - **额度是显式变量**：CI 额度查不到时按不足处理，保守降级——"以为 CI 在跑其实没跑"是最危险的静默失败。

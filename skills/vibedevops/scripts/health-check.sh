@@ -5,9 +5,13 @@
 #   测试 15 / CI 15 / 密钥 20 / 监控 15 / 回滚 10 / 环境可复现 10 / 交接文件 15
 #
 # 用法：
-#   ./health-check.sh [repo-dir]      # 默认当前目录
-#   ./health-check.sh --json [dir]    # JSON 输出
+#   ./health-check.sh [repo-dir]        # 默认当前目录
+#   ./health-check.sh --json [dir]      # JSON 输出
+#   ./health-check.sh --min 60 [dir]    # 门禁模式：低于 60 分退出码 1（可挂 pre-push / CI）
 #   curl -fsSL <raw-url> | bash -s -- /path/to/repo
+#
+# 门禁接法示例（.git/hooks/pre-push 或 CI step）：
+#   ./health-check.sh --min 60 . || { echo "生产就绪分不达标，禁止 push"; exit 1; }
 #
 # bash 3.2 兼容（macOS 自带）：不用数组；$VAR 后接中文一律 ${VAR}；
 # 不用「git xxx | head -1」管道（pipefail 下 SIGPIPE 会翻转退出码），一律命令替换后判空。
@@ -16,10 +20,12 @@ set -uo pipefail
 
 JSON=0
 REPO="."
-for arg in "$@"; do
-  case "$arg" in
-    --json) JSON=1;;
-    *)      REPO="$arg";;
+MIN=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON=1; shift;;
+    --min)  MIN="$2"; shift 2;;
+    *)      REPO="$1"; shift;;
   esac
 done
 
@@ -175,10 +181,19 @@ elif [ "$SCORE" -ge 60 ]; then VERDICT="🟡 能跑但有裸奔环节，先补�
 elif [ "$SCORE" -ge 40 ]; then VERDICT="🟠 多处裸奔，出事是时间问题";
 else VERDICT="🔴 祈祷驱动部署（Prayer-Driven Deployment）"; fi
 
-if [ "$JSON" = 1 ]; then
-  printf '{"repo":"%s","score":%d,"verdict":"%s","breakdown":"%s","gaps":"%s"}\n' \
-    "$REPO" "$SCORE" "$VERDICT" "$(printf %s "$NOTE" | tr '\n' ';')" "$(printf %s "$GAPS" | tr '\n' ';' | sed 's/"/\\"/g')"
+# 门禁判定：--min 模式下低于阈值退出码 1（JSON / 文本两条输出路径共用）
+gate_exit() {
+  if [ -n "$MIN" ] && [ "$SCORE" -lt "$MIN" ]; then
+    [ "$JSON" = 1 ] || echo " ⛔ 门禁：${SCORE} < ${MIN}，不达标（补上面的缺口再来）"
+    exit 1
+  fi
   exit 0
+}
+
+if [ "$JSON" = 1 ]; then
+  printf '{"repo":"%s","score":%d,"min":%s,"verdict":"%s","breakdown":"%s","gaps":"%s"}\n' \
+    "$REPO" "$SCORE" "${MIN:-null}" "$VERDICT" "$(printf %s "$NOTE" | tr '\n' ';')" "$(printf %s "$GAPS" | tr '\n' ';' | sed 's/"/\\"/g')"
+  gate_exit
 fi
 
 echo "════════════════════════════════════════════"
@@ -196,3 +211,4 @@ else
 fi
 echo "--------------------------------------------"
 echo " 分享你的得分：${SCORE}/100 🩺 https://github.com/iPythoning/VibeDevOps-skill"
+gate_exit

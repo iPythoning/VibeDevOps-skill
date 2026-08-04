@@ -79,12 +79,13 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 ### 4.1 密钥与安全基线（第一事故源）
 
-三层防线，规范全文见 `templates/security/SECRETS.md`：
+防线按**依赖成本从零到高**排列（规范全文见 `templates/security/SECRETS.md`）——机械防线不能建立在"用户记得装某个工具"上：
 
-- **进不去**：`templates/security/pre-commit` 提交前拦截（Infisical `infisical scan` → gitleaks → 兜底正则）；`.env.example` 入库、真 `.env` 永不入库
-- **不集中**：[Infisical CLI](https://github.com/Infisical/cli) 托管密钥，本地 `infisical run --env=dev -- <启动命令>` 运行时注入、不落盘；CI 用机器身份（Universal Auth），repo secrets 只存两个凭据
+- **第 0 层（零安装）**：GitHub Secret scanning + Push protection 打开——服务端强制，装不上/被忘/换机器都不影响，所以排第一
+- **第 1 层（单二进制）**：`templates/security/pre-commit` 提交前拦截（gitleaks → Infisical（如已装）→ 兜底正则）；`.env.example` 入库、真 `.env` 永不入库
+- **第 2 层（solo/小团队默认）**：sops + age 把部署密钥**加密进 git**（模板 `templates/security/sops.yaml`）——零服务依赖、离线可用、密钥与代码同生命周期；repo secrets 收敛为一个 age 私钥
 - **漏了能救**：先轮换后清理（`git filter-repo`）→ 查调用日志 → 落 ADR
-- 兜底：GitHub Secret scanning + Push protection + Dependabot 打开
+- **团队化之后**才升级 [Infisical](https://github.com/Infisical/cli)（集中托管 + 按权限分发 + 运行时注入，需要云或自托管后端）；升级条件与 CI 机器身份用法见 SECRETS.md 第八节。**同时跑两套密钥体系比没有体系更糟，二选一**
 
 ### 4.2 CI 三件套（`templates/ci/`）
 
@@ -128,13 +129,13 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **`/vibedevops 地图`**：执行阶段二——扫目录结构、找入口、沿调用链走主流程，输出带注释的项目地图。
 - **`/vibedevops 交接`**：在当前仓库部署交接架构（先 `--dry-run` 给清单，确认后落笔）。
 - **`/vibedevops 复述`**：基于最近的 git diff / commit，向用户提问"这次改了什么、为什么"，纠正其复述。
-- **`/vibedevops 体检`**：生产就绪评分（0–100），按下表逐项探测、输出得分与缺口清单：
+- **`/vibedevops 体检`**：生产就绪评分（0–100），按下表逐项探测、输出得分与缺口清单。评分不止是报告，`scripts/health-check.sh --min <分数>` 低于阈值退出码 1，可直接挂 pre-push / CI 当门禁——分数不够拦下，不靠自觉：
 
 | 维度 | 分值 | 判定规则 |
 |---|---|---|
 | 测试 | 15 | 有测试目录/配置且验证命令非"待补充" |
 | CI | 15 | `.github/workflows/` 存在 PR 检查 + 部署流（各半） |
-| 密钥 | 20 | `.env` 在 gitignore（5）+ 无密钥入库痕迹（10，`git log -p` 抽样 / 跑 infisical scan）+ 有注入方案（5） |
+| 密钥 | 20 | `.env` 在 gitignore（5）+ 无密钥入库痕迹（10，`git log -p` 抽样 / 跑 gitleaks）+ 有注入或加密方案（5，sops+age / Infisical 任一） |
 | 监控 | 15 | `/health` 真实依赖检查 + 错误追踪接入（按实现度给分） |
 | 回滚预案 | 10 | RUNBOOK 存在且含回滚/备份步骤 |
 | 环境可复现 | 10 | 版本锁定文件 + README 有 5 分钟跑通说明 |

@@ -9,8 +9,9 @@
 - **Change Explanation Contract** — before and after every change, the AI is forced to produce a readable plan and summary
 - **Three-Stage Comprehension Path** — an actionable route from "passively reading along" to "actively in control"
 - **Cross-Agent Handoff Architecture** — `AGENTS.md` + `HANDOFF.md` + ADRs + vendor pointer files, so understanding is persisted in the repo and any agent can pick up instantly
-- **Production-Grade Guardrails** — secrets baseline (Infisical) / CI trio / rollback runbook / monitoring checklist, as templates and scripts rather than willpower
-- **`/vibedevops audit`** — a 0–100 production-readiness score showing whether your vibe project is safe to ship
+- **Production-Grade Guardrails** — secrets baseline (zero-dependency-first: Push protection → gitleaks → sops+age) / CI trio / rollback runbook / monitoring checklist, as templates and scripts rather than willpower
+- **Build Gate for constrained environments** — three-tier routing (CI → dedicated builder → local fallback) with a hard 10-minute build limit, auto-degradation, and evidence trails
+- **`/vibedevops audit`** — a 0–100 production-readiness score; with `--min <score>` it becomes a CI/pre-push gate, not just a report
 
 Pairs with `/flow` in this repo (the workflow backbone: think → plan → implement → verify → ship → deploy → retro): **flow governs "how work gets done", vibedevops governs "whether you — and the next agent — still understand the project".**
 
@@ -66,13 +67,15 @@ Deployment discipline and pitfalls (macOS bash 3.2 `set -u` empty-array trap, `.
 
 The typical vibe-coder incident isn't misunderstanding code — it's leaked secrets, zero CI, ship-and-pray deploys, and no rollback plan. Every guardrail ships as a **template + script + AGENTS.md rule** trio — never willpower.
 
-### Secrets Baseline (with [Infisical CLI](https://github.com/Infisical/cli))
+### Secrets Baseline (zero-dependency-first)
 
-Three layers; full spec in [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md):
+Defenses ordered by dependency cost, from zero upward — a system that claims "no willpower required" cannot rest its first line of defense on "the user remembered to install a tool". Full spec in [templates/security/SECRETS.md](skills/vibedevops/templates/security/SECRETS.md):
 
-- **Keep them out**: pre-commit hook blocks leaks (`infisical scan` → gitleaks → fallback regex); real `.env` never committed
-- **Keep them centralized**: `infisical run --env=dev -- <start command>` injects at runtime, nothing on disk; CI uses Universal Auth machine identity — only two credentials in repo secrets
+- **Layer 0 (zero install)**: GitHub Secret scanning + Push protection — server-side, enforced, survives forgotten installs and machine changes; that's why it comes first
+- **Layer 1 (single binary)**: gitleaks pre-commit hook (→ Infisical if installed → fallback regex); real `.env` never committed
+- **Layer 2 (solo/small-team default)**: sops + age encrypt deploy secrets **into git** ([sops.yaml template](skills/vibedevops/templates/security/sops.yaml)) — zero service dependency, offline-friendly, secrets share the code's lifecycle; repo secrets collapse to a single age key
 - **Recover when leaked**: rotate first, scrub history later (`git filter-repo`) → check usage logs → write an ADR
+- **Upgrade to [Infisical](https://github.com/Infisical/cli) only when a team arrives** (permission-scoped distribution, central rotation, runtime injection — needs a cloud or self-hosted backend). Running two secret systems is worse than running none; pick one
 
 ### CI Trio ([templates/ci/](skills/vibedevops/templates/ci/))
 
@@ -86,9 +89,25 @@ Ship with an exit (write down "how do I revert this?" before deploying) · datab
 
 Monitoring four-piece (real `/health`, Sentry, uptime monitor, alerting that reaches a human) · reproducibility acceptance bar: "fresh machine, clone to running ≤ 5 minutes" · [renovate.json](skills/vibedevops/templates/renovate.json) weekly grouped updates (majors get individual human-reviewed PRs)
 
-### `/vibedevops audit` — Production-Readiness Score
+### Build Gate for Constrained Networks ([templates/build-gate/](skills/vibedevops/templates/build-gate/))
+
+For the combination many developers (especially in China) hit all at once: CI free minutes run out **silently**, the laptop can't run the full suite, the home-lab builder drops offline, proxies hijack routes, and Docker Hub is unreachable. The answer is not "get a bigger machine" — it's making *where to verify* an explicit, auto-degrading, evidence-leaving routing decision:
+
+- **Three-tier routing**: CLOUD (CI) → BUILDER (dedicated machine over ssh) → LOCAL (fallback) — same gate command, same evidence file `docs/BUILD-EVIDENCE.md`, only the evidence strength differs
+- **Hard 10-minute limit** (`GATE_TIMEOUT`, default 600s): builds are killed on overrun, with duration recorded. A timeout means the build is sick — fix caches/deps/splits, never raise the limit
+- **LOCAL pass ≠ done, it's debt**: recorded in a queue and auto-reverified at the start of the *next* build once the builder is reachable — no cron required
+- **Runtime registry injection + named cache volumes**: `NPM_REGISTRY` / `PIP_INDEX` env vars work with stock official images (no image rebaking); warm caches cut gate time roughly in half in practice
+- **Tamper-evident evidence**: full gate output logged with sha256 + builder image ID recorded
+
+### `/vibedevops audit` — Production-Readiness Score (and Gate)
 
 Scores any repo 0–100 across 7 dimensions (tests 15 / CI 15 / secrets 20 / monitoring 15 / rollback 10 / environment 10 / handoff docs 15) with a gap list. Scoring rules in [SKILL.md](skills/vibedevops/SKILL.md) §6.
+
+Not just a report — with a threshold it blocks:
+
+```bash
+./skills/vibedevops/scripts/health-check.sh --min 60 . || { echo "Not production-ready — push blocked"; exit 1; }
+```
 
 ---
 
@@ -131,12 +150,14 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   ├── vibedevops/          # Comprehension + governance + production guardrails (main)
 │   │   ├── SKILL.md
 │   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / RUNBOOK / vendor pointers
-│   │   │   ├── security/    # Secrets baseline: SECRETS.md (Infisical), pre-commit, env.example
+│   │   │   ├── security/    # Secrets: SECRETS.md, pre-commit (gitleaks-first), sops.yaml, env.example
 │   │   │   ├── ci/          # pr-check.yml / deploy.yml (GitHub Actions skeletons)
+│   │   │   ├── build-gate/  # Three-tier build routing + 10-min hard limit + debt reverification
 │   │   │   ├── production-checklist.md  # Monitoring four-piece + reproducibility
 │   │   │   └── renovate.json            # Dependency update baseline
 │   │   └── scripts/
-│   │       └── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
+│   │       ├── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
+│   │       └── health-check.sh     # 0–100 readiness score; --min N turns it into a gate
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
 ├── install.sh

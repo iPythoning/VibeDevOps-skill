@@ -118,6 +118,13 @@ START_S="$(date +%s)"
 EXIT=0; DETAIL=""
 CMD_B64="$(printf %s "$CMD" | base64)"
 
+# 证据防伪锚点：builder/local 路由的完整输出落日志文件，sha256 进证据——
+# 纯文本证据可以被编造，带哈希的日志让"这条记录对应哪次真实执行"可核验
+LOG_DIR="${LOG_DIR:-$HOME/.build-gate-logs}"
+mkdir -p "$LOG_DIR"
+GATE_LOG="$LOG_DIR/${PROJECT}-${SHORT}-${ROUTE}-$(date +%s).log"
+LOG_LINE=""; IMG_LINE=""
+
 case "$ROUTE" in
   cloud)
     ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null)"
@@ -166,8 +173,12 @@ case "$ROUTE" in
         ${NPM_REGISTRY:+export npm_config_registry=$NPM_REGISTRY;} ${PIP_INDEX:+export PIP_INDEX_URL=$PIP_INDEX;} \
         cd $WS/run-$SHORT && \$T bash -lc \"\$(echo $CMD_B64 | base64 -d)\"
       fi
-    "
-    EXIT=$?
+    " 2>&1 | tee "$GATE_LOG"
+    EXIT=${PIPESTATUS[0]}
+    LOG_LINE="${GATE_LOG}（sha256 $(shasum -a 256 "$GATE_LOG" | awk '{print $1}')）"
+    if [ -n "$BUILDER_IMAGE" ]; then
+      IMG_LINE="$(ssh "$BUILDER_SSH" "docker image inspect -f '{{.Id}}' '$BUILDER_IMAGE'" 2>/dev/null || echo unknown)"
+    fi
     DETAIL="构建机 ${BUILDER_SSH}（bundle sha256 本地 ${BSHA_LOCAL}；镜像 ${BUILDER_IMAGE:-无}）"
     ;;
 
@@ -183,8 +194,9 @@ case "$ROUTE" in
     ( cd "$REPO" \
       && ${NPM_REGISTRY:+export npm_config_registry="$NPM_REGISTRY";} \
          ${PIP_INDEX:+export PIP_INDEX_URL="$PIP_INDEX";} \
-         run_limited bash -c "$CMD" )
-    EXIT=$?
+         run_limited bash -c "$CMD" ) 2>&1 | tee "$GATE_LOG"
+    EXIT=${PIPESTATUS[0]}
+    LOG_LINE="${GATE_LOG}（sha256 $(shasum -a 256 "$GATE_LOG" | awk '{print $1}')）"
     DETAIL="本机执行（$(uname -m) / $(uname -sr)）"
     # 通过 ≠ 结案：记入补验队列，构建机恢复后由 reverify.sh 自动复验销账
     if [ "$EXIT" -eq 0 ] && [ -n "$BUILDER_SSH" ]; then
@@ -224,6 +236,8 @@ TMP="$(mktemp)"
   printf -- '- 门禁命令：`%s`\n' "$CMD"
   printf -- '- 结果：%s\n' "$VERDICT"
   printf -- '- 明细：%s\n' "$DETAIL"
+  [ -n "$LOG_LINE" ] && printf -- '- 门禁日志：%s\n' "$LOG_LINE"
+  [ -n "$IMG_LINE" ] && printf -- '- builder 镜像 ID：`%s`\n' "$IMG_LINE"
   printf -- '- 起止：%s → %s（耗时 %ss，上限 %ss）\n' "$START" "$END" "$DUR" "$GATE_TIMEOUT"
   printf -- '- 门禁后工作区未提交文件数：%s%s\n' "$DIRTY" "$([ "$DIRTY" -gt 0 ] && echo '（⚠️ 验证的不是干净树）')"
   tail -n +6 "$EV"

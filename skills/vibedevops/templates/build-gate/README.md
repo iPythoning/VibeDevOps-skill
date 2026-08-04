@@ -9,8 +9,8 @@
 
 | 文件 | 作用 |
 |---|---|
-| `build-gate.sh` | 三级路由门禁：CLOUD（CI）→ BUILDER（专用构建机）→ LOCAL（本机兜底），结果统一写 `<repo>/docs/BUILD-EVIDENCE.md` |
-| `reverify.sh` | 补验欠账：cron 定期跑，构建机恢复后把 LOCAL 通过的记录用 `--force-builder` 复验销账 |
+| `build-gate.sh` | 三级路由门禁：CLOUD（CI）→ BUILDER（专用构建机）→ LOCAL（本机兜底），结果统一写 `<repo>/docs/BUILD-EVIDENCE.md`；启动时自动补验历史欠账 |
+| `reverify.sh` | 补验欠账（销账主路径已内嵌进 build-gate 启动时，本脚本供手动跑 / 可选 cron 加速） |
 
 ## 部署
 
@@ -19,12 +19,16 @@ cp build-gate.sh reverify.sh ~/bin/   # 或任何固定位置，两个脚本放�
 chmod +x ~/bin/build-gate.sh ~/bin/reverify.sh
 
 # 配置构建机（ssh alias 或 user@host；没有构建机就留空，则只有 CLOUD/LOCAL 两级）
-export BUILDER_SSH=builder            # 写进 shell rc
+export BUILDER_SSH=builder              # 写进 shell rc
 export BUILDER_IMAGE=my-builder:node22  # 可选；留空则直接在构建机上跑，不用 docker
 
-# 补验 cron（crontab -e）
-*/15 * * * * ~/bin/reverify.sh >> ~/.build-gate-reverify.log 2>&1
+# 国内网络加速（可选，运行时注入，不用重烤镜像）
+export NPM_REGISTRY=https://registry.npmmirror.com
+export PIP_INDEX=https://mirrors.aliyun.com/pypi/simple
 ```
+
+不需要装 cron：销账内嵌在每次构建的启动路径里，构建越勤销得越快、机器睡眠也不影响。
+想加速销账再额外挂 `reverify.sh` 的 cron（见其头注释）。
 
 ## 日常使用
 
@@ -36,10 +40,12 @@ build-gate.sh /path/to/repo --cmd "npm ci && npm test && npm run build"
 ## 配套纪律（写进仓库 AGENTS.md 才生效）
 
 1. **机器角色锁死**：开发机只做内循环（受影响测试 + 类型检查）；构建机做全量验证；生产机只拉已验证制品、绝不构建。每台机器的资源消耗才有上限。
-2. **证据即真相**：任何人 / 任何 agent 都能从 `docs/BUILD-EVIDENCE.md` 查到"这个 commit 被谁、在哪、用什么命令验证过"。LOCAL 记录必须带"弱证据"标注。
-3. **镜像走私有 registry**：构建机不依赖公共镜像加速——在网络通畅的机器上 build/push builder 镜像到私有 registry（如 GHCR），构建机只 pull。预烤清单文档化，版本升级一次烤齐。
-4. **依赖源预置 + 缓存卷**：npm/pip/go 镜像源烤进 builder 镜像，包缓存挂卷，避免每次构建重新下载。
-5. **代理规避**：内网/隧道目标一律用 IP + ssh alias（必要时 `BindInterface` 绑物理网卡），脚本里禁止裸域名；不依赖修改代理工具的配置。
+2. **证据即真相**：任何人 / 任何 agent 都能从 `docs/BUILD-EVIDENCE.md` 查到"这个 commit 被谁、在哪、用什么命令验证过、跑了多久"。LOCAL 记录必须带"弱证据"标注。
+3. **构建时限是铁律不是愿望**：`GATE_TIMEOUT`（默认 600s）机械强制——超时强杀、证据留痕。超时的正确响应永远是修构建（缓存 / 依赖 / 拆分），不是调大上限；上限一松，构建时间只会单调变长。
+4. **镜像走私有 registry**：构建机不依赖公共镜像加速——在网络通畅的机器上 build/push builder 镜像到私有 registry（如 GHCR），构建机只 pull。公共 Docker Hub 在部分网络下**完全不可达**，`FROM node:22` 这类裸 Hub 引用是定时炸弹。
+5. **依赖源运行时注入 + 缓存卷**：`NPM_REGISTRY` / `PIP_INDEX` 环境变量运行时注入（脚本已内置），通用官方镜像（`python:3.12-slim` 等）即插即用，不必为换源重烤镜像；包缓存挂命名卷（脚本已内置 `build-gate-npm` / `build-gate-pip`），实测热缓存能把门禁耗时打到冷缓存的一半以下。
+6. **构建机 docker 一律 `--network host`**（脚本已内置）：NAS / 家庭服务器 / 品牌小主机的 docker 常由厂商系统托管（自定义网络栈），默认 docker0 桥不存在是常态不是故障——显式 host 网络让桥的状态与构建彻底无关。也绝不重启这类机器的 docker daemon（上面跑着厂商全家桶）。
+7. **代理规避 + 双路径 ssh**：构建机 ssh 配两条路——overlay 网络（Tailscale 类，CGNAT `100.64/10` 段必须走 utun 虚拟网卡，**绝不能绑物理网卡**）为主，局域网 IP + `BindInterface` 绑物理网卡为兜底；两条路径的 host key 交叉比对一致后再收录。脚本里禁止裸域名和 `root@IP`，路由策略统一收敛在 `~/.ssh/config`；不依赖修改代理工具的配置。
 
 ## 设计要点（为什么长这样）
 

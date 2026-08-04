@@ -2,13 +2,15 @@
 # reverify.sh — 补验欠账：构建机恢复后，自动重跑本机兜底(LOCAL)通过的门禁
 #
 # 为什么：build-gate.sh 在构建机不可达时降级 LOCAL 兜底，证据强度最弱。
-# LOCAL 通过 ≠ 结案，只是欠账。本脚本由 cron 定期执行：构建机可达时，把队列里
-# 每个仓库用 --force-builder 复跑一次门禁，通过即销账；失败保留在队列，下次再试。
+# LOCAL 通过 ≠ 结案，只是欠账。销账主路径已内嵌在 build-gate.sh 启动时（机会式：
+# 构建越勤销得越快，机器睡眠也不影响）；本脚本供手动跑或额外挂 cron 加速销账。
+# 构建机可达时，把队列里每个仓库用 --force-builder 复跑一次门禁，通过即销账；
+# 失败保留在队列，下次再试。
 #
 # 队列格式（${PENDING_QUEUE}，TSV 每行一条）：
 #   timestamp <TAB> repo_path <TAB> project <TAB> sha <TAB> gate_command
 #
-# 安装（crontab -e）：
+# 可选加速（crontab -e；不装也不影响正确性）：
 #   */15 * * * * /path/to/reverify.sh >> ~/.build-gate-reverify.log 2>&1
 #
 # 用法：reverify.sh        # 幂等，可随时手动跑

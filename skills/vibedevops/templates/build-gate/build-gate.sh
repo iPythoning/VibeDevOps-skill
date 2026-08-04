@@ -9,8 +9,12 @@
 #   3. LOCAL    本机 —— 构建机也不可达时兜底；证据最弱，通过后记入补验队列
 #
 # 三条路把结果写进同一份证据：<repo>/docs/BUILD-EVIDENCE.md（最新在最上，人机共读）。
-# LOCAL 通过的记录写入 ${PENDING_QUEUE}，由同目录 reverify.sh（挂 cron）在构建机恢复后
-# 自动补验销账。LOCAL 通过 ≠ 结案，只是欠账。
+# LOCAL 通过的记录写入 ${PENDING_QUEUE}；销账内嵌在本脚本启动路径——之后任何一次构建，
+# 只要构建机可达就先补验欠账（不依赖 cron；也可手动/定时跑 reverify.sh）。
+# LOCAL 通过 ≠ 结案，只是欠账。
+#
+# 任何门禁默认 10 分钟硬上限（GATE_TIMEOUT）：超时强杀并留证。超时是构建的病，
+# 药方是缓存/依赖/拆分，不是调大上限。
 #
 # 用法：
 #   build-gate.sh <repo> --cmd "<gate command>" [--force-cloud|--force-builder|--force-local]
@@ -30,6 +34,9 @@ RESERVE="${GH_RESERVE_MIN:-200}"
 PENDING_QUEUE="${PENDING_QUEUE:-$HOME/.build-gate-pending.tsv}"
 INCLUDED_MIN="${GH_INCLUDED_MIN:-2000}"   # CI 每月免费分钟数
 EVIDENCE_REL="docs/BUILD-EVIDENCE.md"     # 证据文件（相对仓库根）
+GATE_TIMEOUT="${GATE_TIMEOUT:-600}"       # 门禁硬上限（秒）。超时 = 构建有病：修缓存/依赖/拆分，不许调大上限
+NPM_REGISTRY="${NPM_REGISTRY:-}"          # 运行时注入 npm 源，如 https://registry.npmmirror.com（留空不注入）
+PIP_INDEX="${PIP_INDEX:-}"                # 运行时注入 pip 源，如 https://mirrors.aliyun.com/pypi/simple（留空不注入）
 # ──────────────────────────────────────────────────────────
 
 REPO=""; CMD=""; FORCE=""
@@ -45,6 +52,12 @@ done
 
 [ -n "$REPO" ] && [ -d "$REPO/.git" ] || { echo "用法: $0 <repo> --cmd \"<gate command>\" [--force-cloud|--force-builder|--force-local]"; exit 1; }
 [ -n "$CMD" ] || { echo "❌ 必须用 --cmd 指定门禁命令（如 \"npm ci && npm test && npm run build\"）"; exit 2; }
+
+# 机会式销账：有欠账就先试着还（内嵌于每次构建，不依赖 cron —— 构建越勤销得越快）。
+# REVERIFY_GUARD 防递归：reverify.sh 调回本脚本时跳过此步。
+if [ -f "$PENDING_QUEUE" ] && [ "${REVERIFY_GUARD:-}" != "1" ] && [ -n "$BUILDER_SSH" ]; then
+  REVERIFY_GUARD=1 "$(dirname "$0")/reverify.sh" || true
+fi
 
 REPO="$(cd "$REPO" && pwd)"
 PROJECT="$(basename "$REPO")"
@@ -101,6 +114,7 @@ echo " 命令：$CMD"
 echo "════════════════════════════════════════════"
 
 START="$(date -u +%FT%TZ)"
+START_S="$(date +%s)"
 EXIT=0; DETAIL=""
 CMD_B64="$(printf %s "$CMD" | base64)"
 
@@ -138,11 +152,19 @@ case "$ROUTE" in
       git -C $WS/canonical fetch -q /tmp/gate-$SHORT.bundle $SHA
       rm -rf $WS/run-$SHORT
       git -C $WS/canonical worktree add -f $WS/run-$SHORT $SHA >/dev/null
+      T=''; command -v timeout >/dev/null && T='timeout -k 30 ${GATE_TIMEOUT}'
       if [ -n '$BUILDER_IMAGE' ]; then
-        docker run --rm --network host -v $WS/run-$SHORT:/src -w /src '$BUILDER_IMAGE' \
+        # --network host：NAS/家庭服务器的 docker 常由厂商平台托管，默认 bridge 可能不存在——
+        # 显式 host 网络让默认桥的状态与构建彻底无关。缓存挂命名卷，镜像源运行时注入（免预烤）。
+        \$T docker run --rm --network host \
+          -v build-gate-npm:/root/.npm -v build-gate-pip:/root/.cache/pip \
+          ${NPM_REGISTRY:+-e npm_config_registry=$NPM_REGISTRY} \
+          ${PIP_INDEX:+-e PIP_INDEX_URL=$PIP_INDEX} \
+          -v $WS/run-$SHORT:/src -w /src '$BUILDER_IMAGE' \
           bash -lc \"\$(echo $CMD_B64 | base64 -d)\"
       else
-        cd $WS/run-$SHORT && eval \"\$(echo $CMD_B64 | base64 -d)\"
+        ${NPM_REGISTRY:+export npm_config_registry=$NPM_REGISTRY;} ${PIP_INDEX:+export PIP_INDEX_URL=$PIP_INDEX;} \
+        cd $WS/run-$SHORT && \$T bash -lc \"\$(echo $CMD_B64 | base64 -d)\"
       fi
     "
     EXIT=$?
@@ -151,7 +173,17 @@ case "$ROUTE" in
 
   local)
     echo "⚠️ 本机门禁：证据强度最弱（非干净环境、架构可能不符）。仅作兜底。"
-    ( cd "$REPO" && eval "$CMD" )
+    # 可移植超时：优先 coreutils timeout（退出码 124）；macOS 无 coreutils 时用
+    # perl alarm（原生自带，alarm 定时器跨 exec 存活，超时 SIGALRM → 退出码 142）
+    run_limited() {
+      if command -v timeout >/dev/null 2>&1; then timeout -k 30 "$GATE_TIMEOUT" "$@"
+      else perl -e 'alarm shift @ARGV; exec @ARGV' "$GATE_TIMEOUT" "$@"
+      fi
+    }
+    ( cd "$REPO" \
+      && ${NPM_REGISTRY:+export npm_config_registry="$NPM_REGISTRY";} \
+         ${PIP_INDEX:+export PIP_INDEX_URL="$PIP_INDEX";} \
+         run_limited bash -c "$CMD" )
     EXIT=$?
     DETAIL="本机执行（$(uname -m) / $(uname -sr)）"
     # 通过 ≠ 结案：记入补验队列，构建机恢复后由 reverify.sh 自动复验销账
@@ -166,7 +198,11 @@ case "$ROUTE" in
 esac
 
 END="$(date -u +%FT%TZ)"
-[ "$EXIT" -eq 0 ] && VERDICT="✅ 通过" || VERDICT="❌ 失败（exit ${EXIT}）"
+DUR=$(( $(date +%s) - START_S ))
+if [ "$EXIT" -eq 124 ] || [ "$EXIT" -eq 142 ]; then   # 124=timeout；142=SIGALRM(perl alarm)
+  VERDICT="❌ 超时强杀（>${GATE_TIMEOUT}s）"
+  echo "❌ 门禁超过 ${GATE_TIMEOUT}s 被强制终止 —— 这是构建的病：修缓存/依赖/拆分，不许调大上限。"
+elif [ "$EXIT" -eq 0 ]; then VERDICT="✅ 通过"; else VERDICT="❌ 失败（exit ${EXIT}）"; fi
 DIRTY="$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
 
 # ── 证据落盘（仓库内，换 agent 不丢）────────────────────────
@@ -188,7 +224,7 @@ TMP="$(mktemp)"
   printf -- '- 门禁命令：`%s`\n' "$CMD"
   printf -- '- 结果：%s\n' "$VERDICT"
   printf -- '- 明细：%s\n' "$DETAIL"
-  printf -- '- 起止：%s → %s\n' "$START" "$END"
+  printf -- '- 起止：%s → %s（耗时 %ss，上限 %ss）\n' "$START" "$END" "$DUR" "$GATE_TIMEOUT"
   printf -- '- 门禁后工作区未提交文件数：%s%s\n' "$DIRTY" "$([ "$DIRTY" -gt 0 ] && echo '（⚠️ 验证的不是干净树）')"
   tail -n +6 "$EV"
 } > "$TMP"

@@ -39,6 +39,11 @@ for skill in vibedevops flow; do
     install_to_agent "$HOME/.claude/skills" "Claude Code" "$skill"
     install_to_agent "$HOME/.agents/skills" "Agents" "$skill"
     install_to_agent "$HOME/.cc-switch/skills" "CC-Switch" "$skill"
+    install_to_agent "$HOME/.codex/skills" "Codex" "$skill"
+    install_to_agent "$HOME/.cursor/skills" "Cursor" "$skill"
+    install_to_agent "$HOME/.gemini/skills" "Gemini" "$skill"
+    install_to_agent "$HOME/.qwen/skills" "Qwen" "$skill"
+    install_to_agent "$HOME/.windsurf/skills" "Windsurf" "$skill"
 done
 
 # 3. 尝试安装到 Kimi Work（如果目录存在）

@@ -16,6 +16,29 @@
 
 ---
 
+## 30 秒体检：你的 vibe 项目敢不敢上线？
+
+一条命令，对任意 git 仓库按 7 个维度（测试/CI/密钥/监控/回滚/环境/交接）打 0–100 分并输出缺口清单：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iPythoning/VibeDevOps-skill/main/skills/vibedevops/scripts/health-check.sh | bash -s -- /path/to/your/repo
+```
+
+< 60 分的项目，出事只是时间问题——先按缺口清单从上往下补。
+
+## 分层采用路线（不用一次全上）
+
+| 层 | 成本 | 内容 | 解决什么 |
+|---|---|---|---|
+| **L0** | 5 分钟，零改动 | 变更解释契约（提需求时追加固定指令） | 「AI 改了什么我完全不知道」 |
+| **L1** | 半小时 | 交接三件套：`AGENTS.md` + `docs/HANDOFF.md` + `docs/adr/` | 「换个 agent / 换个会话就失忆」 |
+| **L2** | 半天 | 生产保障包：密钥 pre-commit 拦截、CI 三件套、RUNBOOK 回滚 | 「密钥泄露 / 上线靠祈祷 / 出事不会回滚」 |
+| **L3** | 按需 | 构建门禁三级路由（CI 额度→构建机→本机兜底+补验欠账） | 本机跑不动 / CI 额度耗尽 / 构建机不稳（中国开发者常态） |
+
+先跑体检，按缺口决定上哪层——不要从头读到尾。
+
+---
+
 ## 一、变更解释契约（零成本，马上可用）
 
 每次让 AI 动手，在需求后面追加这段固定指令：
@@ -88,7 +111,11 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 ### `/vibedevops 体检` —— 生产就绪评分
 
-对任意仓库按 7 个维度（测试 15 / CI 15 / 密钥 20 / 监控 15 / 回滚 10 / 环境 10 / 交接 15）打 0–100 分并输出缺口清单。评分规则见 [SKILL.md](skills/vibedevops/SKILL.md) 第六节。
+对任意仓库按 7 个维度（测试 15 / CI 15 / 密钥 20 / 监控 15 / 回滚 10 / 环境 10 / 交接 15）打 0–100 分并输出缺口清单。评分规则见 [SKILL.md](skills/vibedevops/SKILL.md) 第六节；独立可跑的体检脚本（支持 `--json`）：[scripts/health-check.sh](skills/vibedevops/scripts/health-check.sh)。
+
+### 弱网 / 资源受限环境（[templates/build-gate/](skills/vibedevops/templates/build-gate/)）
+
+构建门禁三级路由：CI → 专用构建机 → 本机兜底，额度耗尽自动降级；**本机兜底通过 ≠ 结案，只是欠账**——构建机恢复后自动复验销账。专治 CI 额度静默失效、本机性能不足、构建机连通不稳、镜像拉不下来。
 
 ---
 
@@ -163,15 +190,35 @@ cd VibeDevOps-skill && ./install.sh
 │   │   ├── templates/       # AGENTS.md / HANDOFF.md / ADR / RUNBOOK / 厂商指针
 │   │   │   ├── security/    # 密钥基线：SECRETS.md（含 Infisical）、pre-commit、env.example
 │   │   │   ├── ci/          # pr-check.yml / deploy.yml（GitHub Actions 骨架）
+│   │   │   ├── build-gate/  # 弱网/资源受限环境：构建门禁三级路由 + 补验欠账
 │   │   │   ├── production-checklist.md  # 监控四件套 + 环境可复现
 │   │   │   └── renovate.json            # 依赖更新基线
 │   │   └── scripts/
-│   │       └── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
+│   │       ├── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
+│   │       └── health-check.sh     # 生产就绪体检（0–100 + 缺口清单，--json）
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
 ├── install.sh
 └── README.md / README.en.md
 ```
+
+---
+
+## 用了这套协议？加个回链
+
+这套 skill 的成功指标不是 star，而是有多少仓库真正在用这套交接协议。如果你的项目用了它，在仓库的 `AGENTS.md` / `CLAUDE.md` 里加一行指针：
+
+```markdown
+本仓库协作规则遵循 [VibeDevOps](https://github.com/iPythoning/VibeDevOps-skill) 交接协议。
+```
+
+或加徽章：
+
+```markdown
+[![VibeDevOps](https://img.shields.io/badge/VibeDevOps-handoff%20protocol-blue)](https://github.com/iPythoning/VibeDevOps-skill)
+```
+
+[![VibeDevOps](https://img.shields.io/badge/VibeDevOps-handoff%20protocol-blue)](https://github.com/iPythoning/VibeDevOps-skill)
 
 ---
 
@@ -200,3 +247,7 @@ cd VibeDevOps-skill && ./install.sh
 ## 许可证
 
 MIT © [iPythoning](https://github.com/iPythoning)
+
+---
+
+<sub>关键词：vibe coding 治理 · AI agent 交接协议 · AGENTS.md 模板 · HANDOFF.md · ADR 架构决策记录 · Claude Code / Codex / Cursor / Kimi 协作规则 · AI 编程生产保障 · 密钥防泄露 · CI 额度降级 · 构建门禁 · vibe coding 事故复盘</sub>

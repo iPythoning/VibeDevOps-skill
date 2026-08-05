@@ -113,11 +113,11 @@ Not just a report — with a threshold it blocks:
 
 ## 5. /flow — The Workflow Backbone (formerly flow-skill)
 
-Consolidates scattered commands into a single main chain with **ponytail guardrails throughout** (default `full`, `ultra` for legacy/refactor work): minimum code the task truly needs, never cutting validation, error handling, security, or accessibility.
+Consolidates scattered commands into a single main chain: minimum code the task truly needs, never cutting validation, error handling, security, or accessibility. **ponytail is opt-in and lightweight** — off by default, because always-on guardrails (`full`/`ultra`) measurably degrade output quality; invoke `/ponytail lite` explicitly only when over-engineering actually needs suppressing.
 
 | # | Phase | Goal | Primary Command | Gate |
 |---|---|---|---|---|
-| 0 | Guardrails | Prevent over-engineering | `/ponytail full` | — |
+| 0 | Guardrails (optional) | Prevent over-engineering | Off by default — explicit `/ponytail lite` when needed | — |
 | 1 | Think | Clarify requirements | `/office-hours` (alt: `/grill-me`, `/council`) | — |
 | 2 | Plan | Executable plan | `/plan` · `/prp-prd`→`/prp-plan` (alt: `/autoplan`) | ✋ Plan confirmed before coding |
 | 3 | Implement | Minimal code + tests | `/tdd` (alt: `/prp-implement`) | — |

@@ -129,11 +129,11 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 ## 五、/flow —— 工作流主干（原 flow-skill）
 
-把手头零散的命令收口成一条主力链。**ponytail 全程压舱**（默认 full，动老代码/重构用 ultra），只写任务真正需要的最少代码，但绝不砍校验/错误处理/安全/可访问性。
+把手头零散的命令收口成一条主力链。只写任务真正需要的最少代码，但绝不砍校验/错误处理/安全/可访问性。**ponytail 按需轻量启用**：默认不挂载——实测默认全程压舱（full/ultra）会持续压制输出质量；确实需要抑制过度工程时显式 `/ponytail lite`。
 
 | # | 阶段 | 目标 | 主命令 | 备选/补充 | 产出 | 关卡 |
 |---|---|---|---|---|---|---|
-| 0 | 压舱 | 抑制过度工程 | `/ponytail full` | 重构 `/ponytail ultra` · 探索脚本 `/ponytail lite` | — | — |
+| 0 | 压舱（可选） | 抑制过度工程 | 默认不启用 | 需要时显式 `/ponytail lite` | — | — |
 | 1 | 思考 | 把需求/方案逼清楚 | `/office-hours` | `/grill-me`（拷问计划） · `/council`（多方案抉择） | 需求/决策记录 | — |
 | 2 | 计划 | 出可执行计划 | 小改 `/plan` · 新特性 `/prp-prd`→`/prp-plan` | `/autoplan`（自动跑评审，需先有 plan） | plan 文件 | ✋ 计划须你确认才动代码 |
 | 3 | 实现 | 最小可用代码+测试 | `/tdd`（RED→GREEN→REFACTOR） | `/prp-implement`（plan 驱动+每步验证） | 代码+测试 commit | — |
@@ -144,8 +144,8 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 **两条线（按改动体量选）：**
 
-- **快速线**（bugfix/小改）: `0 ponytail` → `2 /plan` → `3 /tdd` → `4 /verify`+`/ponytail-review` → `5 /prp-commit`+`/ship` → `6 /land-and-deploy`+`/canary`
-- **完整线**（新特性）: `0` → `1 /office-hours` → `2 /prp-prd`→`/prp-plan`（或 `/autoplan`） → `3 /tdd` 或 `/prp-implement` → `4 /code-review`+`/ponytail-review`+`/verify` → `5 /ship` → `6 /land-and-deploy`+`/canary` → `7 /retro`
+- **快速线**（bugfix/小改）: `2 /plan` → `3 /tdd` → `4 /verify`+`/ponytail-review` → `5 /prp-commit`+`/ship` → `6 /land-and-deploy`+`/canary`
+- **完整线**（新特性）: `1 /office-hours` → `2 /prp-prd`→`/prp-plan`（或 `/autoplan`） → `3 /tdd` 或 `/prp-implement` → `4 /code-review`+`/ponytail-review`+`/verify` → `5 /ship` → `6 /land-and-deploy`+`/canary` → `7 /retro`
 
 **安全关卡（铁律）：** 计划未经确认不动代码 · 禁 `git add -A`，出 PR 前 `git diff --stat` 自查 · 部署生产必须明确点头，验证穿透到功能层（发真实请求看回复）。
 

@@ -69,7 +69,7 @@ description: Vibe coding 但不放弃理解，生产级 DevOps 保障。用于 /
 
 1. 一个分支/工作树同一时刻只有一个写入者；其他模型只读审查。
 2. 换 App 前先验证、更新 HANDOFF、提交；下一棒从该 commit 接续。
-3. HANDOFF 记录当前写入者、App/模型、分支与 HEAD、验收标准、验证证据和下一棒唯一动作。
+3. HANDOFF 记录当前写入者、App/模型、分支与 HEAD、验收标准、验证证据、fallback 状态和下一棒唯一动作。
 4. 不复制整段聊天历史；只传仓库事实、决策、证据和必要视觉素材。
 5. 需要并行写入时使用不同 worktree 和不同分支，合并前由一个主工程负责人收口。
 
@@ -141,6 +141,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **`/vibedevops 地图`**：执行阶段二——扫目录结构、找入口、沿调用链走主流程，输出带注释的项目地图。
 - **`/vibedevops 交接`**：在当前仓库部署交接架构（先 `--dry-run` 给清单，确认后落笔）。
 - **`/vibedevops 路由`**：读取 `references/model-routing.md`，按任务风险、视觉依赖、上下文规模和成本选择主模型与专项审查者；不默认让四个模型全部参与。
+- **`/vibedevops fallback`**：读取 `references/model-routing.md`，先区分额度/限流/上游故障与请求/代码错误；只对前者按任务类型执行有限 fallback，并把失败模型、证据、下一跳和冷却状态写入 HANDOFF。
 - **`/vibedevops 接棒`**：核对工作树、当前写入者、分支/HEAD、验收标准和验证证据；接棒条件不满足时停止写入并报告缺口。
 - **`/vibedevops 复述`**：基于最近的 git diff / commit，向用户提问"这次改了什么、为什么"，纠正其复述。
 - **`/vibedevops 体检`**：生产就绪评分（0–100），按下表逐项探测、输出得分与缺口清单。评分不止是报告，`scripts/health-check.sh --min <分数>` 低于阈值退出码 1，可直接挂 pre-push / CI 当门禁——分数不够拦下，不靠自觉：

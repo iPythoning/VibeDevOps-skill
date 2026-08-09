@@ -187,6 +187,8 @@ ln -s ~/VibeDevOps-skill/skills/flow \
 cd VibeDevOps-skill && ./install.sh
 ```
 
+安装脚本还会向 OpenChamber/OpenCode 注册 `Reasonix-Go`、`Kimi-Code`、`Kimi-K3`、`DeepSeek-Pro` 和 `Fallback-Auto`。日常按任务选择固定 Agent，只有额度、限流或上游不可用时才按 [模型路由规则](skills/vibedevops/references/model-routing.md) fallback；OmniRoute Auto 仅作最后保障。
+
 ---
 
 ## 仓库结构

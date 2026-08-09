@@ -13,6 +13,15 @@
 - 工作树：__WORKTREE_STATE__
 - 下一棒：待指定
 
+## 模型路由状态
+
+- 任务类型：待分类（fast / code / long-context / vision / architecture）
+- 首选模型：待指定
+- 当前模型：待指定
+- 已失败 / 冷却路由：无
+- 下一 fallback：待指定
+- 最近错误证据：无
+
 ## 当前目标
 
 （待填写：当前迭代的验收标准）

@@ -47,7 +47,24 @@ for skill in vibedevops flow; do
     install_to_agent "$HOME/.windsurf/skills" "Windsurf" "$skill"
 done
 
-# 3. 尝试安装到 Kimi Work（如果目录存在）
+# 3. 安装 OpenChamber 专项 Agent（同名普通文件先备份）
+OPENCHAMBER_AGENTS="$HOME/.config/opencode/agents"
+OPENCHAMBER_AGENT_SOURCE="$REPO_DIR/skills/vibedevops/templates/openchamber-agents"
+mkdir -p "$OPENCHAMBER_AGENTS"
+for profile in Reasonix-Go Kimi-K3 Kimi-Code DeepSeek-Pro Fallback-Auto; do
+    target="$OPENCHAMBER_AGENTS/$profile.md"
+    if [ -L "$target" ]; then
+        ln -sfn "$OPENCHAMBER_AGENT_SOURCE/$profile.md" "$target"
+    else
+        if [ -e "$target" ]; then
+            mv "$target" "$target.$(date +%Y%m%d%H%M%S).bak"
+        fi
+        ln -s "$OPENCHAMBER_AGENT_SOURCE/$profile.md" "$target"
+    fi
+    echo "   ✅ OpenChamber Agent -> $profile"
+done
+
+# 4. 尝试安装到 Kimi Work（如果目录存在）
 KIMI_SKILLS="$HOME/Library/Application Support/kimi-desktop/daimon-share/daimon/skills"
 if [ -d "$KIMI_SKILLS" ]; then
     for skill in vibedevops flow; do
@@ -59,7 +76,7 @@ if [ -d "$KIMI_SKILLS" ]; then
 fi
 
 echo ""
-echo "✅ 安装完成！vibedevops + flow skills 已同步到所有 Agent。"
+echo "✅ 安装完成！vibedevops + flow skills 与 OpenChamber Agent 已同步。"
 echo "📍 统一源: $REPO_DIR/skills"
 echo "🔄 更新方式: cd $REPO_DIR && git pull"
 echo ""

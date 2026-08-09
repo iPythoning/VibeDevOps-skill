@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+trap 'echo "installer fixture failed at line $LINENO" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"

@@ -37,6 +37,8 @@
 - 体检正反例 fixtures 覆盖正常 CD、注释/env 诱骗、缺少回滚、排除 main、静态不可达回滚与仅 step 级 failure guard。
 - 技能结构、Shell/YAML 语法、diff 检查和仓库健康检查通过。
 - 安装器在隔离 HOME fixture 中验证所有 Agent 的规则入口、skills 链接与厂商配置保留行为。
+- 仓库自身在 PR 与 main push 上自动运行密钥扫描、Shell 语法、体检评分 fixtures 和安装器 fixtures。
+- 生产体检识别 `scripts/test-*.sh` 形式的轻量 Shell 测试，不再把脚本型仓库误判为无测试。
 
 ## 已完成
 
@@ -48,6 +50,7 @@
 - 2026-08-10：按 CI/CD 最佳实践统一“合并 main 即授权”，补齐不可变制品、provenance/SBOM、OIDC、渐进验证、自动回滚复验、可续租 TTL 回滚租约、原子完成发布与逐门禁证据。
 - 2026-08-10：安装器新增全局规则收敛，将 Claude/Codex/OpenCode/Cursor/Gemini/Qwen/Windsurf 指向 `~/AGENTS.md`，并用隔离 fixture 防止覆盖厂商专属配置。
 - 2026-08-10：已在本机执行新安装器；OpenCode/OpenChamber 全局入口直链 `~/AGENTS.md`，Claude import 唯一，9/9 skills surface 校验通过，原 Claude 配置已生成可恢复备份。
+- 2026-08-10：新增仓库自身 CI 与 `.env`/备份忽略规则，发布 VibeDevOps 前不再依赖本机自觉验证。
 
 ## 进行中
 
@@ -71,6 +74,7 @@
 - `./skills/vibedevops/scripts/test-health-check.sh`
 - `./skills/vibedevops/scripts/test-install.sh`
 - `actionlint skills/vibedevops/templates/ci/pr-check.yml skills/vibedevops/templates/ci/deploy.yml`
+- `actionlint .github/workflows/ci.yml`
 - `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/vibedevops`
 - `git diff --check`
 - `./skills/vibedevops/scripts/health-check.sh --json .`

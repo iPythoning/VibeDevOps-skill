@@ -165,6 +165,7 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   │       └── test-install.sh      # Global-rule pointers and skill-install fixtures
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
+├── .github/workflows/ci.yml # Repository PR/main quality gate
 ├── install.sh
 └── README.md / README.en.md
 ```

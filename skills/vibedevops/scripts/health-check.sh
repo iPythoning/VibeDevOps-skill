@@ -162,6 +162,7 @@ RUBY
 # ── 1. 测试（15）──────────────────────────────────────────
 T=0
 if path_has '(^|/)(tests?|__tests__|spec|e2e)/' \
+   || path_has '(^|/)scripts/test-[^/]+\.sh$' \
    || path_has '(^|/)(jest\.config\.|vitest\.config\.|pytest\.ini|tox\.ini|\.rspec|go\.mod$)'; then
   T=8
 else

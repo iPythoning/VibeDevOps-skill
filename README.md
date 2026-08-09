@@ -213,6 +213,7 @@ cd VibeDevOps-skill && ./install.sh
 │   │       └── test-install.sh      # 全局规则入口与 skills 安装 fixtures
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
+├── .github/workflows/ci.yml # 仓库自身 PR/main 机械门禁
 ├── install.sh
 └── README.md / README.en.md
 ```

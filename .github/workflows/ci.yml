@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository history
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate shell syntax
+        run: |
+          bash -n \
+            install.sh \
+            skills/vibedevops/scripts/deploy-handoff.sh \
+            skills/vibedevops/scripts/health-check.sh \
+            skills/vibedevops/scripts/test-health-check.sh \
+            skills/vibedevops/scripts/test-install.sh
+      - name: Test CI/CD scoring
+        run: ./skills/vibedevops/scripts/test-health-check.sh
+      - name: Test global rule installation
+        run: ./skills/vibedevops/scripts/test-install.sh
+      - name: Run repository health check
+        run: ./skills/vibedevops/scripts/health-check.sh --json .

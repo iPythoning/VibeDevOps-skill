@@ -32,9 +32,17 @@ detect_verify() {
   else echo '（待补充：填写本项目的测试 / 构建命令）'; fi
 }
 
-render() { # render <template> <dest> <name> <verify>
-  local name="$3" verify="$4"
-  sed -e "s/__PROJECT_NAME__/$name/g" -e "s/__VERIFY__/$(echo "$verify" | sed 's/[&/\]/\\&/g')/g" -e "s/__DATE__/$DATE/g" "$1" > "$2"
+render() { # render <template> <dest> <name> <verify> <repo>
+  local name="$3" verify="$4" repo="$5" branch head tree_state
+  branch="$(git -C "$repo" branch --show-current 2>/dev/null)"; [ -n "$branch" ] || branch="detached"
+  head="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null)"; [ -n "$head" ] || head="无提交"
+  if [ -n "$(git -C "$repo" status --short 2>/dev/null)" ]; then tree_state="有未提交改动"; else tree_state="干净"; fi
+  sed -e "s/__PROJECT_NAME__/$name/g" \
+      -e "s/__VERIFY__/$(echo "$verify" | sed 's/[&/\]/\\&/g')/g" \
+      -e "s/__DATE__/$DATE/g" \
+      -e "s/__BRANCH__/$(echo "$branch" | sed 's/[&/\]/\\&/g')/g" \
+      -e "s/__HEAD__/$(echo "$head" | sed 's/[&/\]/\\&/g')/g" \
+      -e "s/__WORKTREE_STATE__/$(echo "$tree_state" | sed 's/[&/\]/\\&/g')/g" "$1" > "$2"
 }
 
 if [ ${#REPOS[@]} -eq 0 ]; then
@@ -59,14 +67,14 @@ for r in "${REPOS[@]}"; do
   # 1) AGENTS.md
   if [ -e "$r/AGENTS.md" ]; then kept+=("AGENTS.md(已存在)")
   else
-    [ $DRY -eq 0 ] && render "$TPL/AGENTS.template.md" "$r/AGENTS.md" "$name" "$verify"
+    [ $DRY -eq 0 ] && render "$TPL/AGENTS.template.md" "$r/AGENTS.md" "$name" "$verify" "$r"
     created+=("AGENTS.md")
   fi
 
   # 2) docs/HANDOFF.md
   if [ -e "$r/docs/HANDOFF.md" ]; then kept+=("docs/HANDOFF.md(已存在)")
   else
-    [ $DRY -eq 0 ] && render "$TPL/HANDOFF.template.md" "$r/docs/HANDOFF.md" "$name" "$verify"
+    [ $DRY -eq 0 ] && render "$TPL/HANDOFF.template.md" "$r/docs/HANDOFF.md" "$name" "$verify" "$r"
     created+=("docs/HANDOFF.md")
   fi
 

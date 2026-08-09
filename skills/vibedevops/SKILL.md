@@ -1,6 +1,6 @@
 ---
 name: vibedevops
-description: Vibe coding 但不放弃理解，生产级 DevOps 保障。触发词 /vibedevops、看懂 AI 改动、项目地图、变更摘要、复述测试、交接架构、HANDOFF、AGENTS.md、密钥泄露、Infisical、CI 模板、回滚预案、事故复盘、上线监控、生产就绪体检。把"被动看懂 AI 写的代码"升级为"主动掌控项目"：变更解释契约 + 三阶段理解进阶 + AGENTS.md/HANDOFF/ADR 跨 agent 交接架构 + 密钥/CI/回滚/监控机械防线（模板化，不靠自觉）+ /vibedevops 体检生产就绪评分。通用于所有项目与所有厂商 agent。
+description: Vibe coding 但不放弃理解，生产级 DevOps 保障。用于 /vibedevops、看懂 AI 改动、项目地图、变更摘要、复述测试、跨 App/多模型路由、Claude/Codex/Reasonix/Kimi 切换、交接架构、HANDOFF、AGENTS.md、密钥泄露、CI、回滚、监控和生产就绪体检。提供变更解释契约、单写入者多模型工作流、AGENTS.md/HANDOFF/ADR 跨 agent 交接架构，以及模板化机械门禁。通用于所有项目与所有厂商 agent。
 ---
 
 # VibeDevOps — vibe coding，但不放弃理解
@@ -60,6 +60,18 @@ description: Vibe coding 但不放弃理解，生产级 DevOps 保障。触发�
 1. 跑完整验证命令，确认全绿
 2. 更新 `docs/HANDOFF.md`
 3. 提交 git，不留未提交的半成品
+
+### 多 App / 多模型切换
+
+把 App 视为无状态入口，把 Git、`AGENTS.md` 和 `docs/HANDOFF.md` 视为状态机。详细角色路由与接棒格式见 `references/model-routing.md`。
+
+必须遵守：
+
+1. 一个分支/工作树同一时刻只有一个写入者；其他模型只读审查。
+2. 换 App 前先验证、更新 HANDOFF、提交；下一棒从该 commit 接续。
+3. HANDOFF 记录当前写入者、App/模型、分支与 HEAD、验收标准、验证证据和下一棒唯一动作。
+4. 不复制整段聊天历史；只传仓库事实、决策、证据和必要视觉素材。
+5. 需要并行写入时使用不同 worktree 和不同分支，合并前由一个主工程负责人收口。
 
 **部署纪律（跨仓库批量部署时）：**
 - 只新增、不覆盖；已存在的厂商文件备份（`.bak`）后追加指针块
@@ -128,6 +140,8 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **无参数**：探测当前仓库交接健康度（有无 AGENTS.md / HANDOFF.md / ADR / 验证命令是否已填），给出缺口清单和下一步。
 - **`/vibedevops 地图`**：执行阶段二——扫目录结构、找入口、沿调用链走主流程，输出带注释的项目地图。
 - **`/vibedevops 交接`**：在当前仓库部署交接架构（先 `--dry-run` 给清单，确认后落笔）。
+- **`/vibedevops 路由`**：读取 `references/model-routing.md`，按任务风险、视觉依赖、上下文规模和成本选择主模型与专项审查者；不默认让四个模型全部参与。
+- **`/vibedevops 接棒`**：核对工作树、当前写入者、分支/HEAD、验收标准和验证证据；接棒条件不满足时停止写入并报告缺口。
 - **`/vibedevops 复述`**：基于最近的 git diff / commit，向用户提问"这次改了什么、为什么"，纠正其复述。
 - **`/vibedevops 体检`**：生产就绪评分（0–100），按下表逐项探测、输出得分与缺口清单。评分不止是报告，`scripts/health-check.sh --min <分数>` 低于阈值退出码 1，可直接挂 pre-push / CI 当门禁——分数不够拦下，不靠自觉：
 

@@ -17,7 +17,7 @@
 
 ## 验证命令（共同基线）
 
-- 测试 / 检查：`（待补充：填写本项目的测试 / 构建命令）`
+- 测试 / 检查：`bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh && ./skills/vibedevops/scripts/health-check.sh --json . >/dev/null`
 
 如命令变更，必须同步更新本节——这是所有 agent 的共同基线。
 

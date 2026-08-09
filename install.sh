@@ -38,6 +38,7 @@ install_to_agent() {
 for skill in vibedevops flow; do
     install_to_agent "$HOME/.claude/skills" "Claude Code" "$skill"
     install_to_agent "$HOME/.agents/skills" "Agents" "$skill"
+    install_to_agent "$HOME/.config/opencode/skills" "OpenCode / OpenChamber" "$skill"
     install_to_agent "$HOME/.cc-switch/skills" "CC-Switch" "$skill"
     install_to_agent "$HOME/.codex/skills" "Codex" "$skill"
     install_to_agent "$HOME/.cursor/skills" "Cursor" "$skill"

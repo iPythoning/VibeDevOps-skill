@@ -20,6 +20,7 @@
 ## 验收标准
 
 - `vibedevops` 能由“多模型/跨 App/路由/接棒”等请求触发。
+- OpenChamber 能从 `~/.config/opencode/skills` 读取统一源中的技能。
 - 技能明确默认角色、单写入者、结构化接棒载荷和缓存纪律。
 - 新部署的 AGENTS/HANDOFF 模板包含写入所有权与 Git 状态字段。
 - 本机 `~/AGENTS.md` 对所有 coding agent 强制执行同一协议。
@@ -29,6 +30,7 @@
 
 - 2026-08-06：部署跨 agent 交接架构（AGENTS.md / HANDOFF / ADR / 厂商指针）
 - 2026-08-09：新增多 App / 多模型路由参考、单写入者规则、结构化接棒模板，并同步本机全局规则。
+- 2026-08-09：安装脚本新增 OpenCode/OpenChamber 技能目录，避免图形端漏装。
 
 ## 进行中
 

@@ -79,7 +79,7 @@ Defenses ordered by dependency cost, from zero upward — a system that claims "
 
 ### CI Trio ([templates/ci/](skills/vibedevops/templates/ci/))
 
-`pr-check.yml` (secret scan + lint/type/test, with Node/Python/Go swap-in blocks) · `deploy.yml` (GitHub Environments manual approval + Infisical injection + functional-layer smoke test) · standard rollback procedure in the RUNBOOK
+`pr-check.yml` (secret scan + lint/type/test/build) · `deploy.yml` (re-verify merged main + build one immutable artifact with provenance/SBOM + OIDC + functional smoke/canary + automatic rollback) · standard rollback procedure in the RUNBOOK
 
 ### Rollback & Incident Response ([RUNBOOK.template.md](skills/vibedevops/templates/RUNBOOK.template.md))
 
@@ -123,10 +123,10 @@ Consolidates scattered commands into a single main chain: minimum code the task 
 | 3 | Implement | Minimal code + tests | `/tdd` (alt: `/prp-implement`) | — |
 | 4 | Self-check | Mechanical gate + correctness | `/verify` → `/ponytail-review` → `/code-review` | ✋ Fix reds first |
 | 5 | Ship | commit → PR | `/prp-commit` → `/ship` | ✋✋ `git diff --stat` self-check |
-| 6 | Deploy | Go live + monitor | `/land-and-deploy` → `/canary` | ✋✋✋ Explicit approval |
+| 6 | Deploy | Go live + monitor | merge main → promote immutable artifact → canary | Automatic; rollback on functional-gate failure |
 | 7 | Retro | Document + pay debt | `/retro` + `/ponytail-debt` | — |
 
-**Safety gates (ironclad):** no code before plan confirmation · no `git add -A`, self-review `git diff --stat` before PR · production deploys require explicit approval, verified at the functional layer (real requests, real responses).
+**Safety gates (ironclad):** no code before plan confirmation · no `git add -A`, self-review `git diff --stat` before PR · merge only after green PR CI · merging to main authorizes automatic production deployment, functional verification, and rollback on failure. Delay the merge when a release window is required; never add a second approval after merge.
 
 Full details: [skills/flow/SKILL.md](skills/flow/SKILL.md).
 
@@ -138,6 +138,8 @@ Full details: [skills/flow/SKILL.md](skills/flow/SKILL.md).
 git clone https://github.com/iPythoning/VibeDevOps-skill.git
 cd VibeDevOps-skill && ./install.sh
 ```
+
+The installer converges Claude, Codex, OpenCode/OpenChamber, Cursor, Gemini, Qwen, and Windsurf on `~/AGENTS.md` as the single machine-wide authority, then symlinks `skills/vibedevops` and `skills/flow` into every detected agent. Existing vendor configuration is preserved and backed up before the first pointer/import is added.
 
 Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into your agent's skills directory (`~/.claude/skills/`, `~/.agents/skills/`, Kimi Work's daimon skills dir, etc.).
 
@@ -155,11 +157,15 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   │   │   ├── build-gate/  # Three-tier build routing + 10-min hard limit + debt reverification
 │   │   │   ├── production-checklist.md  # Monitoring four-piece + reproducibility
 │   │   │   └── renovate.json            # Dependency update baseline
+│   │   ├── references/     # Model routing and CI/CD best practices
 │   │   └── scripts/
 │   │       ├── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
-│   │       └── health-check.sh     # 0–100 readiness score; --min N turns it into a gate
+│   │       ├── health-check.sh     # 0–100 readiness score; --min N turns it into a gate
+│   │       ├── test-health-check.sh # Positive/negative CI/CD scoring fixtures
+│   │       └── test-install.sh      # Global-rule pointers and skill-install fixtures
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
+├── .github/workflows/ci.yml # Repository PR/main quality gate
 ├── install.sh
 └── README.md / README.en.md
 ```

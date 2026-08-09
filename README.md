@@ -107,7 +107,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 ### CI 三件套（[templates/ci/](skills/vibedevops/templates/ci/)）
 
-`pr-check.yml`（密钥扫描 + lint/type/test，含 Node/Python/Go 替换段）· `deploy.yml`（GitHub Environments 人工 approve + Infisical 注入 + 功能层 smoke test）· 回滚标准动作见 RUNBOOK
+`pr-check.yml`（密钥扫描 + lint/type/test/build）· `deploy.yml`（合并 main 后重验 + 单次构建不可变制品 + provenance/SBOM + OIDC + 功能层 smoke/canary + 失败自动回滚）· 回滚标准动作见 RUNBOOK
 
 ### 回滚与事故应急（[RUNBOOK.template.md](skills/vibedevops/templates/RUNBOOK.template.md)）
 
@@ -139,15 +139,15 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 | 3 | 实现 | 最小可用代码+测试 | `/tdd`（RED→GREEN→REFACTOR） | `/prp-implement`（plan 驱动+每步验证） | 代码+测试 commit | — |
 | 4 | 自检 | 机械门+过度工程+正确性 | `/verify` → `/ponytail-review` → `/code-review` | `/quality-gate`（快速 lint/type/test） | 报告+删除清单 | ✋ 红的必须先修 |
 | 5 | 出活 | commit → PR | `/prp-commit` → `/ship` | 手工 git（只 `git add -u`/逐文件） | PR | ✋✋ 出 PR 前 `git diff --stat` 自查 |
-| 6 | 部署 | 上线+盯线上 | `/land-and-deploy` → `/canary` | 项目专用 deploy.sh | 生产+监控 | ✋✋✋ 部署生产必须你点头 |
+| 6 | 部署 | 上线+盯线上 | 合并 main → 推广不可变制品 → canary | 项目专用 deploy.sh | 生产+监控 | 自动；功能门失败自动回滚 |
 | 7 | 复盘 | 沉淀+还债 | `/retro` + `/ponytail-debt` | `/benchmark`（性能回归） | 复盘+债账 | — |
 
 **两条线（按改动体量选）：**
 
-- **快速线**（bugfix/小改）: `2 /plan` → `3 /tdd` → `4 /verify`+`/ponytail-review` → `5 /prp-commit`+`/ship` → `6 /land-and-deploy`+`/canary`
-- **完整线**（新特性）: `1 /office-hours` → `2 /prp-prd`→`/prp-plan`（或 `/autoplan`） → `3 /tdd` 或 `/prp-implement` → `4 /code-review`+`/ponytail-review`+`/verify` → `5 /ship` → `6 /land-and-deploy`+`/canary` → `7 /retro`
+- **快速线**（bugfix/小改）: `2 /plan` → `3 /tdd` → `4 /verify`+`/ponytail-review` → `5 /prp-commit`+`/ship` → 合并 main 后 `6 CD` 自动执行
+- **完整线**（新特性）: `1 /office-hours` → `2 /prp-prd`→`/prp-plan`（或 `/autoplan`） → `3 /tdd` 或 `/prp-implement` → `4 /code-review`+`/ponytail-review`+`/verify` → `5 /ship` → 合并 main 后 `6 CD` 自动执行 → `7 /retro`
 
-**安全关卡（铁律）：** 计划未经确认不动代码 · 禁 `git add -A`，出 PR 前 `git diff --stat` 自查 · 部署生产必须明确点头，验证穿透到功能层（发真实请求看回复）。
+**安全关卡（铁律）：** 计划未经确认不动代码 · 禁 `git add -A`，出 PR 前 `git diff --stat` 自查 · PR CI 全绿才合并 · 合并 main 后 CD 自动部署并验证到功能层（发真实请求看回复），失败自动回滚。需要延迟发布就延迟合并，不在合并后追加人工审批。
 
 **开源生态映射：** `/flow` 每个环节都对应成熟开源工具——计划 [adr-tools](https://github.com/npryce/adr-tools) · 实现 [Jest](https://github.com/jestjs/jest)/[pytest](https://github.com/pytest-dev/pytest) · 自检 [ESLint](https://github.com/eslint/eslint)/[SonarQube](https://github.com/SonarSource/sonarqube) · 出活 [semantic-release](https://github.com/semantic-release/semantic-release)/[changesets](https://github.com/changesets/changesets) · 部署 [Argo CD](https://github.com/argoproj/argo-cd)/[Flux](https://github.com/fluxcd/flux2) · 金丝雀 [Flagger](https://github.com/fluxcd/flagger)/[Argo Rollouts](https://github.com/argoproj/argo-rollouts) · 压测 [k6](https://github.com/grafana/k6)。`/flow` 的价值不是取代它们，而是串成一条**有安全关卡、有上下文记忆、有复盘沉淀**的完整工作流。
 
@@ -187,6 +187,10 @@ ln -s ~/VibeDevOps-skill/skills/flow \
 cd VibeDevOps-skill && ./install.sh
 ```
 
+安装脚本会把 Claude、Codex、OpenCode/OpenChamber、Cursor、Gemini、Qwen、Windsurf 的全局入口收敛到 `~/AGENTS.md`，并用符号链接同步 VibeDevOps/Flow skills。已有厂商配置会保留，首次补写前自动备份；OpenCode 官方全局入口 `~/.config/opencode/AGENTS.md` 直接链接唯一规则源。
+
+它还会向 OpenChamber/OpenCode 注册 `Reasonix-Go`、`Kimi-Code`、`Kimi-K3`、`DeepSeek-Pro` 和 `Fallback-Auto`。日常按任务选择固定 Agent，只有额度、限流或上游不可用时才按 [模型路由规则](skills/vibedevops/references/model-routing.md) fallback；OmniRoute Auto 仅作最后保障。
+
 ---
 
 ## 仓库结构
@@ -201,11 +205,15 @@ cd VibeDevOps-skill && ./install.sh
 │   │   │   ├── build-gate/  # 弱网/资源受限环境：构建门禁三级路由 + 补验欠账
 │   │   │   ├── production-checklist.md  # 监控四件套 + 环境可复现
 │   │   │   └── renovate.json            # 依赖更新基线
+│   │   ├── references/     # 模型路由与 CI/CD 最佳实践
 │   │   └── scripts/
 │   │       ├── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
-│   │       └── health-check.sh     # 生产就绪体检（0–100 + 缺口清单，--json）
+│   │       ├── health-check.sh     # 生产就绪体检（0–100 + 缺口清单，--json）
+│   │       ├── test-health-check.sh # CI/CD 评分正反例 fixtures
+│   │       └── test-install.sh      # 全局规则入口与 skills 安装 fixtures
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
+├── .github/workflows/ci.yml # 仓库自身 PR/main 机械门禁
 ├── install.sh
 └── README.md / README.en.md
 ```

@@ -2,6 +2,19 @@
 
 > 部署关的"验证穿透到功能层"在这里落地。上线前逐项打勾，打不齐的先记录在 HANDOFF.md 已知坑。
 
+## 零、CI/CD 主链
+
+- [ ] 短生命周期分支 + PR；required checks 全绿才合并，禁止绕过 main 直接推送。
+- [ ] PR 合并 main 自动触发 CD；`workflow_dispatch` 只用于重试/回滚，不是正常发布入口。
+- [ ] 制品只构建一次，以 commit SHA/digest 标识，并在环境之间推广同一份不可变制品；记录 provenance/SBOM。
+- [ ] Actions 使用最小 `permissions`，第三方 Action 锁定完整 commit SHA；部署身份优先 OIDC 短期凭证。
+- [ ] 生产部署串行；先 canary/blue-green，再按真实指标自动推进或回滚。
+- [ ] 功能层 smoke test、错误率/延迟/饱和度门槛和自动回滚已机械化；回滚后再次验证。
+- [ ] canary 前由独立部署控制器建立带充足 TTL 的可续租回滚租约，推广前续租，生产全绿后原子更新 last-known-good 并解除；整条 CI run 被取消或 runner 失联也能安全恢复。
+- [ ] 数据库使用 expand-contract，危险功能用 feature flag；应用回滚不依赖逆向执行破坏性迁移。
+- [ ] 每次发布记录 commit、制品 digest、每个功能/指标门禁 outcome、部署结果和回滚证据。
+- [ ] hosted CI 额度和 runner 在线状态有监控；额度不足时自动路由 self-hosted runner/外部 CD，不退回人工发布。
+
 ## 一、监控四件套（最低成本，半天能搞完）
 
 - [ ] **`/health` 端点返回依赖真实状态**：ping 一次 DB / 缓存 / 关键下游，任何一个挂了返回 503。

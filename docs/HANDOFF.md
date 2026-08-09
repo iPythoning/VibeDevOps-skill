@@ -52,6 +52,7 @@
 - 2026-08-10：已在本机执行新安装器；OpenCode/OpenChamber 全局入口直链 `~/AGENTS.md`，Claude import 唯一，9/9 skills surface 校验通过，原 Claude 配置已生成可恢复备份。
 - 2026-08-10：新增仓库自身 CI 与 `.env`/备份忽略规则，发布 VibeDevOps 前不再依赖本机自觉验证。
 - 2026-08-10：GitHub CI 首轮暴露 GNU/BSD `stat` 差异；fixture 已按操作系统分支修复，并把 checkout 统一升级到官方 v5 固定 SHA。
+- 2026-08-10：主干 CI 通过后发现 Gitleaks v2 的 Node 20 弃用警告；工作流与模板已升级到官方 v3.0.0 固定 SHA（Node 24）。
 
 ## 进行中
 

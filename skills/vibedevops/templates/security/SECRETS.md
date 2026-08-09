@@ -55,7 +55,7 @@ commit，有 diff、有历史、可回滚。
 ## 五、CI/CD：最少明文原则
 
 - **默认**：`.env.enc` 进 git + CI 里 `SOPS_AGE_KEY` 一个 secret 解密（见上）
-- 部署审批挂 GitHub Environments（人工 approve 后才拿得到 secret）
+- 部署密钥放 GitHub Environments 或 repo secrets，以最小权限提供给 `push main` 的 CD；正常发布不配置 Required reviewers。发布授权已在 PR 合并完成，手动审批只会制造“已合并但未上线”的隐性队列。
 - 团队化之后再考虑集中托管（见第八节），不要一开始就上
 
 ## 六、提交前拦截：pre-commit hook

@@ -5,7 +5,7 @@
 
 ## 当前目标
 
-把“OpenChamber 日常主入口 + Claude 原生 App”的任务路由、有限 fallback 与单写入者交接协议固化到 VibeDevOps 技能、仓库模板和本机全局规则。
+按 CI/CD 最佳实践修正全局规则与 VibeDevOps：PR 合并 main 即生产授权，随后自动重验、构建一次不可变制品、渐进部署、功能验证并在失败时自动回滚。
 
 ## 当前接棒状态
 
@@ -29,14 +29,13 @@
 
 ## 验收标准
 
-- `vibedevops` 能由“多模型/跨 App/路由/接棒”等请求触发。
-- OpenChamber 能从 `~/.config/opencode/skills` 读取统一源中的技能。
-- 技能明确默认角色、单写入者、结构化接棒载荷和缓存纪律。
-- 技能按任务类型定义 OpenChamber 内部 fallback，并限制重试次数与最多三跳。
-- 额度/限流/上游故障与 400、权限、地区、代码错误被明确区分。
-- 新部署的 AGENTS/HANDOFF 模板包含写入所有权与 Git 状态字段。
-- 本机 `~/AGENTS.md` 对所有 coding agent 强制执行同一协议。
-- 技能结构、Shell 语法、diff 检查和仓库健康检查通过。
+- `~/AGENTS.md`、VibeDevOps、Flow、中英文 README 和模板不存在“合并后再次人工批准”的冲突。
+- PR workflow 具备最小权限、并发取消、secret scan、lint/type/test/build 与 Action SHA 锁定。
+- push main workflow 重验合并结果，只构建一次不可变制品并记录 digest/provenance/SBOM。
+- CD 使用短期身份、串行部署、功能 smoke/canary、失败自动回滚、独立 TTL 回滚租约、回滚复验和逐门禁发布证据。
+- 生产体检只有检测到 push main 自动部署及 smoke/canary + failure() 回滚才给满 CI 分。
+- 体检正反例 fixtures 覆盖正常 CD、注释/env 诱骗、缺少回滚、排除 main、静态不可达回滚与仅 step 级 failure guard。
+- 技能结构、Shell/YAML 语法、diff 检查和仓库健康检查通过。
 
 ## 已完成
 
@@ -45,6 +44,7 @@
 - 2026-08-09：安装脚本新增 OpenCode/OpenChamber 技能目录，避免图形端漏装。
 - 2026-08-09：改为 OpenChamber 日常主入口、Claude 原生 App；加入任务型 fallback、失败冷却、三跳上限与缓存边界。
 - 2026-08-09：注册 5 个 OpenChamber Agent；Kimi K2.7 Code、DeepSeek V4 Pro 与 OmniRoute Auto smoke test 通过，Codex/GPT 与 Kimi K3 的失败证据已记录。
+- 2026-08-10：按 CI/CD 最佳实践统一“合并 main 即授权”，补齐不可变制品、provenance/SBOM、OIDC、渐进验证、自动回滚复验、可续租 TTL 回滚租约、原子完成发布与逐门禁证据。
 
 ## 进行中
 
@@ -60,11 +60,13 @@
 
 ## 下一步
 
-在一个真实项目中执行 `/vibedevops 路由`，验证 Kimi K2.7 Code / DeepSeek Pro 能仅凭 Git + HANDOFF 接续；Kimi K3 路由恢复后再做 smoke test。
+将更新后的 CI/CD 模板应用到具体生产仓库；按 `references/ci-cd-best-practices.md` 补齐验证、OIDC、last-known-good/arm-rollback/renew-rollback/canary/promote/complete-deployment/rollback、功能门、指标门和告警脚本。回滚租约必须由 Actions runner 之外的部署控制器持有。
 
 ## 如何验证
 
-- `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh`
+- `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh`
+- `./skills/vibedevops/scripts/test-health-check.sh`
+- `actionlint skills/vibedevops/templates/ci/pr-check.yml skills/vibedevops/templates/ci/deploy.yml`
 - `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/vibedevops`
 - `git diff --check`
 - `./skills/vibedevops/scripts/health-check.sh --json .`
@@ -73,6 +75,7 @@
 
 | 日期 | 操作者 | 摘要 |
 |---|---|---|
+| 2026-08-10 | Codex | 按最佳实践修正合并授权边界并补齐自动 CI/CD 安全链 |
 | 2026-08-09 | Codex | 改为 OpenChamber 优先并加入按任务类型的有限 fallback |
 | 2026-08-09 | Codex | 固化四模型跨 App 路由与单写入者接棒协议 |
 | 2026-08-06 | 部署脚本 | 初始化交接架构 |

@@ -102,8 +102,12 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 ### 4.2 CI 三件套（`templates/ci/`）
 
 - `pr-check.yml`：密钥扫描 + lint/type/test，PR 必过（含 Node/Python/Go 三语言注释替换段）
-- `deploy.yml`：main 合并后部署，挂 GitHub Environments 人工 approve；Infisical 注入密钥；部署后 smoke test **穿透到功能层**
+- `deploy.yml`：PR 合并进 main 后重验合并结果、构建一次带 provenance/SBOM 的不可变制品，以 OIDC 短期身份自动部署；功能层 smoke/canary 失败自动回滚并复验
 - 回滚标准动作：见 RUNBOOK
+
+**授权边界：PR 合并就是生产部署授权。** 审核、CI 和发布时间决策都在合并前完成；合并后不得再次等待人工 approve。`workflow_dispatch` 只用于重试、回滚和事故恢复，不能成为正常发布的唯一入口。需要等待发布时间窗口时延迟合并 PR。
+
+完整流水线、不可变制品、渐进发布、OIDC、供应链锁定和观测指标见 `references/ci-cd-best-practices.md`。
 
 ### 4.3 回滚与事故应急（`templates/RUNBOOK.template.md`）
 
@@ -133,7 +137,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 
 ## 五、与 /flow 的关系
 
-`/flow`（见 `../flow/SKILL.md`）是**工作流主干**：思考→计划→实现→自检→出活→部署→复盘，带安全关卡。VibeDevOps 是**理解层与治理层**：flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目、敢不敢让它上线"。两者共用同一套安全关卡（计划须确认 / 出 PR 前 `git diff --stat` / 部署必须点头）。
+`/flow`（见 `../flow/SKILL.md`）是**工作流主干**：思考→计划→实现→自检→出活→部署→复盘，带安全关卡。VibeDevOps 是**理解层与治理层**：flow 管"活怎么干完"，vibedevops 管"你和下一个 agent 还懂不懂这个项目、敢不敢让它上线"。两者共用同一套安全关卡：计划须确认、出 PR 前 `git diff --stat`、PR CI 全绿才合并；合并 main 后由 CD 自动部署、验证和失败回滚。
 
 ## 六、调用 /vibedevops 时的编排行为
 
@@ -149,7 +153,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 | 维度 | 分值 | 判定规则 |
 |---|---|---|
 | 测试 | 15 | 有测试目录/配置且验证命令非"待补充" |
-| CI | 15 | `.github/workflows/` 存在 PR 检查 + 部署流（各半） |
+| CI | 15 | PR 检查（8）+ push main 自动部署（4）+ 功能 smoke/canary 与失败自动回滚（3） |
 | 密钥 | 20 | `.env` 在 gitignore（5）+ 无密钥入库痕迹（10，`git log -p` 抽样 / 跑 gitleaks）+ 有注入或加密方案（5，sops+age / Infisical 任一） |
 | 监控 | 15 | `/health` 真实依赖检查 + 错误追踪接入（按实现度给分） |
 | 回滚预案 | 10 | RUNBOOK 存在且含回滚/备份步骤 |

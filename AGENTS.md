@@ -17,7 +17,7 @@
 
 ## 验证命令（共同基线）
 
-- 测试 / 检查：`bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh && ./skills/vibedevops/scripts/health-check.sh --json . >/dev/null`
+- 测试 / 检查：`bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh && ./skills/vibedevops/scripts/test-health-check.sh && ./skills/vibedevops/scripts/health-check.sh --json . >/dev/null`
 
 如命令变更，必须同步更新本节——这是所有 agent 的共同基线。
 
@@ -30,6 +30,14 @@
 
 - 小步提交，一个 commit 只做一件事；一个任务一个分支。
 - PR / 合并描述里贴验收标准；验收标准尽量写成可执行测试。
+
+## CI/CD 纪律
+
+- PR 阶段自动执行 test / typecheck / lint / build，全绿才允许合并。
+- PR 合并进 `main` 即完成生产部署授权；`push main` 必须自动部署、功能冒烟并在失败时自动回滚。
+- 禁止把 `workflow_dispatch` 或合并后的人工 approve 设为正常发布必经门；手动触发仅用于重试、回滚和事故恢复。
+- 需要等待发布时间窗口时延迟合并，不得先合并再卡住部署。
+- hosted CI 额度不足时切换受监控的 self-hosted runner/外部 CD 控制器，不得退回手工部署。
 
 ## 反模式（禁止）
 

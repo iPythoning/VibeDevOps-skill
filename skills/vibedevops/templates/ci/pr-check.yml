@@ -5,24 +5,34 @@ name: PR Check
 on:
   pull_request:
 
+permissions:
+  contents: read
+
+# 新提交到同一 PR 时取消旧检查，避免浪费 CI 额度和返回过期结果
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   secrets-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - name: Gitleaks scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
       # Infisical 替代方案：
       # - run: npm install -g @infisical/cli && infisical scan
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # --- Node ---
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'   # 没有 .nvmrc 就写死，如 '20'
           cache: npm
@@ -30,13 +40,14 @@ jobs:
       - run: npm run lint --if-present
       - run: npm run typecheck --if-present
       - run: npm test
+      - run: npm run build
 
       # --- Python（替换上面 Node 段）---
-      # - uses: actions/setup-python@v5
+      # - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       #   with: { python-version-file: '.python-version' }
       # - run: pip install -r requirements.txt
       # - run: pytest
 
       # --- Go（替换上面 Node 段）---
-      # - uses: actions/setup-go@v5
-      # - run: go vet ./... && go test ./...
+      # - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      # - run: go vet ./... && go test ./... && go build ./...

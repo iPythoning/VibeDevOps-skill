@@ -51,6 +51,113 @@ tracked_re()  { [ -n "$(git grep -lIE "$1" 2>/dev/null)" ]; }
 path_has() { printf '%s\n' "$TRACKED" | grep -qE "$1"; }
 # 占位符 ≥3 处才算「模板未填」（个别 待补充 不误伤）
 tmpl_bad() { [ "$(grep -coE '待补充|TODO|占位|\[填写' "$1" 2>/dev/null)" -ge 3 ]; }
+# 用 Ruby 标准库 Psych 解析真实 YAML 结构，避免注释/env 字符串伪造 CI/CD 得分。
+inspect_ci_workflows() {
+  ruby -ryaml - "$@" <<'RUBY'
+pr = false
+auto = false
+safe = false
+
+static_false = lambda do |condition|
+  condition == false || condition.to_s.strip.match?(/\A(?:\$\{\{\s*)?false(?:\s*\}\})?\z/i)
+end
+
+matches_ref = lambda do |patterns, ref|
+  matched = false
+  Array(patterns).each do |raw|
+    pattern = raw.to_s
+    negative = pattern.start_with?('!')
+    pattern = pattern[1..] if negative
+    matched = !negative if File.fnmatch?(pattern, ref, File::FNM_PATHNAME | File::FNM_EXTGLOB)
+  end
+  matched
+end
+
+ARGV.each do |file|
+  begin
+    doc = YAML.load_file(file)
+  rescue StandardError
+    next
+  end
+  next unless doc.is_a?(Hash)
+
+  triggers = doc['on'] || doc[true]
+  push_main = false
+  case triggers
+  when Hash
+    pr ||= triggers.key?('pull_request')
+    if triggers.key?('push')
+      push = triggers['push']
+      if push.nil? || !push.is_a?(Hash)
+        push_main = true
+      elsif push.key?('branches')
+        push_main = matches_ref.call(push['branches'], 'main')
+      elsif push.key?('branches-ignore')
+        push_main = !matches_ref.call(push['branches-ignore'], 'main')
+      else
+        push_main = true
+      end
+    end
+  when Array
+    names = triggers.map(&:to_s)
+    pr ||= names.include?('pull_request')
+    push_main = names.include?('push')
+  when String
+    pr ||= triggers == 'pull_request'
+    push_main = triggers == 'push'
+  end
+
+  info = {}
+  jobs = doc['jobs']
+  if jobs.is_a?(Hash)
+    jobs.each do |name, job|
+      next unless job.is_a?(Hash)
+      next if static_false.call(job['if'])
+
+      runs = []
+      job_condition = job['if'].to_s
+      Array(job['steps']).each do |step|
+        next unless step.is_a?(Hash)
+        next if static_false.call(step['if'])
+        runs << step['run'].to_s
+      end
+      commands = runs.join("\n")
+      info[name.to_s] = {
+        needs: Array(job['needs']).map(&:to_s),
+        deploy: commands.match?(/(?:^|\n)\s*(?:\.\/)?deploy\.sh\s+(?:canary|promote|deploy)\b|(?:^|\n)\s*(?:kubectl|helm|argocd|flux)\s+/i),
+        smoke: commands.match?(/(?:^|\n)\s*(?:\.\/)?scripts\/smoke-test\.sh\b/i),
+        rollback: commands.match?(/(?:^|\n)\s*(?:\.\/)?deploy\.sh\s+rollback\b/i),
+        failure_guard: job_condition.match?(/failure\(\)/i) || (
+          job_condition.match?(/always\(\)/i) &&
+          job_condition.match?(/needs\.[A-Za-z0-9_-]+\.result\s*==\s*['"]failure['"]/i)
+        )
+      }
+    end
+  end
+
+  ancestors = lambda do |name, seen = {}|
+    return [] if seen[name]
+    seen = seen.merge(name => true)
+    direct = info.fetch(name, {})[:needs] || []
+    direct + direct.flat_map { |dependency| ancestors.call(dependency, seen) }
+  end
+
+  deploy_jobs = info.select { |_name, job| job[:deploy] }.keys
+  deploy = !deploy_jobs.empty?
+  smoke = info.any? do |name, job|
+    job[:smoke] && (job[:deploy] || !(ancestors.call(name) & deploy_jobs).empty?)
+  end
+  rollback = info.any? do |name, job|
+    job[:rollback] && job[:failure_guard] && !(ancestors.call(name) & deploy_jobs).empty?
+  end
+
+  auto ||= push_main && deploy
+  safe ||= push_main && deploy && smoke && rollback
+end
+
+puts [pr ? 1 : 0, auto ? 1 : 0, safe ? 1 : 0].join(' ')
+RUBY
+}
 
 # ── 1. 测试（15）──────────────────────────────────────────
 T=0
@@ -70,14 +177,19 @@ SCORE=$((SCORE+T)); note "测试：${T}/15"
 # ── 2. CI（15）────────────────────────────────────────────
 C=0
 if [ -d .github/workflows ]; then
-  PR=0; DEPLOY=0
-  for f in .github/workflows/*.yml .github/workflows/*.yaml; do
-    [ -f "$f" ] || continue
-    grep -q 'pull_request' "$f" && PR=1
-    grep -qiE 'deploy|release|cd' "$f" && DEPLOY=1
-  done
-  [ "$PR" = 1 ]     && C=$((C+8))  || gap "[CI -8] 有 workflows 但没有 PR 触发的检查流（pull_request）"
-  [ "$DEPLOY" = 1 ] && C=$((C+7))  || gap "[CI -7] 有 workflows 但没有部署/发布流（deploy/release）"
+  PR=0; AUTO_DEPLOY=0; SAFE_DEPLOY=0
+  CI_FACTS=""
+  if command -v ruby >/dev/null 2>&1; then
+    CI_FACTS="$(inspect_ci_workflows .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null)" || CI_FACTS=""
+  fi
+  if [[ "$CI_FACTS" =~ ^[01][[:space:]][01][[:space:]][01]$ ]]; then
+    read -r PR AUTO_DEPLOY SAFE_DEPLOY <<< "$CI_FACTS"
+    [ "$PR" = 1 ] && C=$((C+8)) || gap "[CI -8] 有 workflows 但没有 PR 触发的检查流（pull_request）"
+    [ "$AUTO_DEPLOY" = 1 ] && C=$((C+4)) || gap "[CI -4] 没有 push main 自动部署；workflow_dispatch-only 不算持续部署"
+    [ "$SAFE_DEPLOY" = 1 ] && C=$((C+3)) || gap "[CI -3] 自动部署缺功能 smoke/canary 或独立 failure 回滚"
+  else
+    gap "[CI -15] 无法用 Ruby/Psych 结构化验证 workflows，按未建立可靠 CI/CD 处理"
+  fi
 else
   gap "[CI -15] 没有 .github/workflows/ —— PR 无机械门禁，合并靠自觉"
 fi

@@ -1,38 +1,244 @@
-# deploy.yml — main 合并后部署，生产环境必须人工点头（放到 .github/workflows/）
-# 前置：GitHub 仓库 Settings → Environments → 新建 production → 勾 Required reviewers
+# deploy.yml — PR 合并进 main 后自动构建、canary、推广或回滚
+# production / production-canary Environment 可用于 secrets 与审计，但正常发布不配置人工审批。
 name: Deploy
 
 on:
   push:
     branches: [main]
 
-# 同一时刻只允许一个部署在跑，新提交排队而非并发互踩
+permissions:
+  contents: read
+
+# 整条生产流水线串行；后续提交必须等待当前推广或回滚结束。
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment: production   # ← 人工 approve 关卡挂在这里
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Re-verify merged main
+        run: |
+          test -x ./scripts/verify.sh
+          ./scripts/verify.sh
+      - name: Resolve immutable image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build once and push SBOM
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+      - name: Sign build provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
-      # --- 密钥注入：Infisical 机器身份（repo secrets 只需存这两个）---
-      - name: Install Infisical CLI
-        run: npm install -g @infisical/cli
+  prepare:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      last-known-good: ${{ steps.lkg.outputs.revision }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Acquire short-lived deployment credentials
+        run: |
+          test -x ./scripts/auth-deploy.sh
+          ./scripts/auth-deploy.sh
+      - name: Resolve and verify last-known-good artifact
+        id: lkg
+        run: |
+          test -x ./deploy.sh
+          revision="$(./deploy.sh last-known-good)"
+          [[ "$revision" =~ ^([a-z0-9]+([._-][a-z0-9]+)*)(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)+@sha256:[0-9a-f]{64}$ ]]
+          ./deploy.sh verify-artifact "$revision"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy with secrets injected
+  canary:
+    needs: [build, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-canary
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      rollback-lease: ${{ steps.lease.outcome }}
+      deploy: ${{ steps.deploy.outcome }}
+      functional-gate: ${{ steps.functional.outcome }}
+      metrics-gate: ${{ steps.metrics.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: ./scripts/auth-deploy.sh
+      # 租约由部署控制器持有；即使整条 Actions run 被取消，TTL 到期也会恢复 LKG。
+      - name: Arm independent rollback lease
+        id: lease
         env:
-          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
-          INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          # 把下面换成你的真实部署命令；密钥由 Infisical 运行时注入，不落明文
-          infisical run --env=prod -- ./deploy.sh
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+        run: ./deploy.sh arm-rollback "$LAST_KNOWN_GOOD" --ttl 2h
+      - name: Deploy canary
+        id: deploy
+        env:
+          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+        run: ./deploy.sh canary "$ARTIFACT"
+      - name: Canary functional gate
+        id: functional
+        run: ./scripts/smoke-test.sh canary
+      - name: Canary metrics gate
+        id: metrics
+        run: ./scripts/metrics-gate.sh canary
 
-      # --- 部署后验证：穿透到功能层，不只看 health check 绿 ---
-      - name: Smoke test（发真实请求看真实回复）
+  promote:
+    needs: [build, prepare, canary]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      rollback-lease-renewal: ${{ steps.renew.outcome }}
+      deploy: ${{ steps.deploy.outcome }}
+      functional-gate: ${{ steps.functional.outcome }}
+      metrics-gate: ${{ steps.metrics.outcome }}
+      complete-deployment: ${{ steps.complete.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: ./scripts/auth-deploy.sh
+      - name: Renew independent rollback lease
+        id: renew
+        run: ./deploy.sh renew-rollback --ttl 2h
+      - name: Promote canary artifact to production
+        id: deploy
+        env:
+          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+        run: ./deploy.sh promote "$ARTIFACT"
+      - name: Production functional gate
+        id: functional
+        run: ./scripts/smoke-test.sh production
+      - name: Production metrics gate
+        id: metrics
+        run: ./scripts/metrics-gate.sh production
+      - name: Atomically mark known-good and disarm rollback lease
+        id: complete
+        env:
+          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+        run: ./deploy.sh complete-deployment "$ARTIFACT"
+
+  rollback:
+    needs: [build, prepare, canary, promote]
+    if: ${{ always() && (needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      restore: ${{ steps.restore.outcome }}
+      functional-gate: ${{ steps.functional.outcome }}
+      metrics-gate: ${{ steps.metrics.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: ./scripts/auth-deploy.sh
+      - name: Restore last-known-good artifact
+        id: restore
+        env:
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+        run: ./deploy.sh rollback "$LAST_KNOWN_GOOD"
+      - name: Verify rollback functionally
+        id: functional
+        run: ./scripts/smoke-test.sh production
+      - name: Verify rollback metrics
+        id: metrics
+        run: ./scripts/metrics-gate.sh production
+
+  alert:
+    needs: [build, prepare, canary, promote, rollback]
+    if: ${{ always() && (needs.build.result == 'failure' || needs.prepare.result == 'failure' || needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled' || needs.rollback.result == 'failure' || needs.rollback.result == 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Alert pipeline or rollback failure
+        run: ./scripts/notify-deploy-failure.sh
+
+  evidence:
+    needs: [build, prepare, canary, promote, rollback]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Record deployment evidence
+        env:
+          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+          CANARY_LEASE: ${{ needs.canary.outputs.rollback-lease }}
+          CANARY_DEPLOY: ${{ needs.canary.outputs.deploy }}
+          CANARY_FUNCTIONAL: ${{ needs.canary.outputs.functional-gate }}
+          CANARY_METRICS: ${{ needs.canary.outputs.metrics-gate }}
+          PROMOTE_RENEWAL: ${{ needs.promote.outputs.rollback-lease-renewal }}
+          PROMOTE_DEPLOY: ${{ needs.promote.outputs.deploy }}
+          PROMOTE_FUNCTIONAL: ${{ needs.promote.outputs.functional-gate }}
+          PROMOTE_METRICS: ${{ needs.promote.outputs.metrics-gate }}
+          PROMOTE_COMPLETE: ${{ needs.promote.outputs.complete-deployment }}
+          ROLLBACK_RESTORE: ${{ needs.rollback.outputs.restore }}
+          ROLLBACK_FUNCTIONAL: ${{ needs.rollback.outputs.functional-gate }}
+          ROLLBACK_METRICS: ${{ needs.rollback.outputs.metrics-gate }}
         run: |
-          # 例：curl -fsS https://your-app.com/api/health | jq -e '.db == "up"'
-          # 例：curl -fsS -X POST https://your-app.com/api/core-action -d '{"ping":1}' | grep -q ok
-          echo "TODO: 换成你项目的真实功能层冒烟测试"
+          {
+            echo "## Production deployment"
+            echo "- target: production"
+            echo "- commit: $GITHUB_SHA"
+            echo "- artifact: $ARTIFACT"
+            echo "- last-known-good: $LAST_KNOWN_GOOD"
+            echo "- build: ${{ needs.build.result }}"
+            echo "- canary: ${{ needs.canary.result }}"
+            echo "  - rollback lease: $CANARY_LEASE"
+            echo "  - deploy: $CANARY_DEPLOY"
+            echo "  - functional gate: $CANARY_FUNCTIONAL"
+            echo "  - metrics gate: $CANARY_METRICS"
+            echo "- promote: ${{ needs.promote.result }}"
+            echo "  - rollback lease renewal: $PROMOTE_RENEWAL"
+            echo "  - deploy: $PROMOTE_DEPLOY"
+            echo "  - functional gate: $PROMOTE_FUNCTIONAL"
+            echo "  - metrics gate: $PROMOTE_METRICS"
+            echo "  - complete deployment: $PROMOTE_COMPLETE"
+            echo "- rollback: ${{ needs.rollback.result }}"
+            echo "  - restore: $ROLLBACK_RESTORE"
+            echo "  - functional gate: $ROLLBACK_FUNCTIONAL"
+            echo "  - metrics gate: $ROLLBACK_METRICS"
+            echo "- workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"

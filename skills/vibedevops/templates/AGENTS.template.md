@@ -26,6 +26,14 @@
 2. 更新 `docs/HANDOFF.md`：当前目标 / 已完成 / 进行中（含文件与位置）/ 已知坑 / 下一步 / 验证方式。
 3. 提交 git：**不留未提交的半成品**；commit message 用 Conventional Commits 并写清"为什么"。
 
+## CI/CD 纪律（强制）
+
+- PR 阶段自动执行 test / typecheck / lint / build，全绿才允许合并。
+- PR 合并进 `main` 即完成生产部署授权；`push main` 必须自动部署、功能冒烟并在失败时自动回滚。
+- 禁止把 `workflow_dispatch` 或合并后的人工 approve 设为正常发布必经门；手动触发只用于重试、回滚和事故恢复。
+- 需要等待发布时间窗口时延迟合并，不得先合并再卡住部署。
+- hosted CI 额度不足时切换受监控的 self-hosted runner/外部 CD 控制器，不得退回手工部署。
+
 ## 验证命令（共同基线）
 
 - 测试 / 检查：`__VERIFY__`

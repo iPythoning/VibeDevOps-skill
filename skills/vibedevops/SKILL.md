@@ -79,6 +79,8 @@ description: Vibe coding 但不放弃理解，生产级 DevOps 保障。用于 /
 - 工具厂商自管的内部仓库（`.codex/`、`.claude/` 等）**跳过**，动了会搞坏工具
 - 没有 git 的目录这套架构立不住，先 `git init` 再部署
 
+**本机全局同步：** `install.sh` 将 Claude、Codex、OpenCode/OpenChamber、Cursor、Gemini、Qwen、Windsurf 的用户级入口收敛到 `~/AGENTS.md`，并把 VibeDevOps/Flow 以符号链接安装到各 Agent。厂商专属配置只追加权威指针或 import，首次修改前备份；OpenCode 使用官方全局入口 `~/.config/opencode/AGENTS.md` 的直链，避免规则复制后漂移。
+
 **踩过的坑（部署脚本作者注意）：**
 - macOS 自带 bash 3.2 下 `set -u` 对空数组展开误报 unbound variable——不要用 `set -u`，用 `${arr[@]+"${arr[@]}"}` 防御式展开
 - `.gitignore` 忽略整个 `docs/` 时交接文件会被漏掉——提交用 `git add -f`，文件一旦被跟踪即恢复正常跟踪

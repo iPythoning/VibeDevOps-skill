@@ -187,7 +187,9 @@ ln -s ~/VibeDevOps-skill/skills/flow \
 cd VibeDevOps-skill && ./install.sh
 ```
 
-安装脚本还会向 OpenChamber/OpenCode 注册 `Reasonix-Go`、`Kimi-Code`、`Kimi-K3`、`DeepSeek-Pro` 和 `Fallback-Auto`。日常按任务选择固定 Agent，只有额度、限流或上游不可用时才按 [模型路由规则](skills/vibedevops/references/model-routing.md) fallback；OmniRoute Auto 仅作最后保障。
+安装脚本会把 Claude、Codex、OpenCode/OpenChamber、Cursor、Gemini、Qwen、Windsurf 的全局入口收敛到 `~/AGENTS.md`，并用符号链接同步 VibeDevOps/Flow skills。已有厂商配置会保留，首次补写前自动备份；OpenCode 官方全局入口 `~/.config/opencode/AGENTS.md` 直接链接唯一规则源。
+
+它还会向 OpenChamber/OpenCode 注册 `Reasonix-Go`、`Kimi-Code`、`Kimi-K3`、`DeepSeek-Pro` 和 `Fallback-Auto`。日常按任务选择固定 Agent，只有额度、限流或上游不可用时才按 [模型路由规则](skills/vibedevops/references/model-routing.md) fallback；OmniRoute Auto 仅作最后保障。
 
 ---
 
@@ -207,7 +209,8 @@ cd VibeDevOps-skill && ./install.sh
 │   │   └── scripts/
 │   │       ├── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
 │   │       ├── health-check.sh     # 生产就绪体检（0–100 + 缺口清单，--json）
-│   │       └── test-health-check.sh # CI/CD 评分正反例 fixtures
+│   │       ├── test-health-check.sh # CI/CD 评分正反例 fixtures
+│   │       └── test-install.sh      # 全局规则入口与 skills 安装 fixtures
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
 ├── install.sh

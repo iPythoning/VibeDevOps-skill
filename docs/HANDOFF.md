@@ -5,7 +5,7 @@
 
 ## 当前目标
 
-按 CI/CD 最佳实践修正全局规则与 VibeDevOps：PR 合并 main 即生产授权，随后自动重验、构建一次不可变制品、渐进部署、功能验证并在失败时自动回滚。
+发布 CI/CD 最佳实践版 VibeDevOps，并把本机所有 Agent 的用户级入口收敛到 `~/AGENTS.md`；PR 合并 main 即生产授权，随后自动重验、构建一次不可变制品、渐进部署、功能验证并在失败时自动回滚。
 
 ## 当前接棒状态
 
@@ -36,6 +36,7 @@
 - 生产体检只有检测到 push main 自动部署及 smoke/canary + failure() 回滚才给满 CI 分。
 - 体检正反例 fixtures 覆盖正常 CD、注释/env 诱骗、缺少回滚、排除 main、静态不可达回滚与仅 step 级 failure guard。
 - 技能结构、Shell/YAML 语法、diff 检查和仓库健康检查通过。
+- 安装器在隔离 HOME fixture 中验证所有 Agent 的规则入口、skills 链接与厂商配置保留行为。
 
 ## 已完成
 
@@ -45,6 +46,8 @@
 - 2026-08-09：改为 OpenChamber 日常主入口、Claude 原生 App；加入任务型 fallback、失败冷却、三跳上限与缓存边界。
 - 2026-08-09：注册 5 个 OpenChamber Agent；Kimi K2.7 Code、DeepSeek V4 Pro 与 OmniRoute Auto smoke test 通过，Codex/GPT 与 Kimi K3 的失败证据已记录。
 - 2026-08-10：按 CI/CD 最佳实践统一“合并 main 即授权”，补齐不可变制品、provenance/SBOM、OIDC、渐进验证、自动回滚复验、可续租 TTL 回滚租约、原子完成发布与逐门禁证据。
+- 2026-08-10：安装器新增全局规则收敛，将 Claude/Codex/OpenCode/Cursor/Gemini/Qwen/Windsurf 指向 `~/AGENTS.md`，并用隔离 fixture 防止覆盖厂商专属配置。
+- 2026-08-10：已在本机执行新安装器；OpenCode/OpenChamber 全局入口直链 `~/AGENTS.md`，Claude import 唯一，9/9 skills surface 校验通过，原 Claude 配置已生成可恢复备份。
 
 ## 进行中
 
@@ -64,8 +67,9 @@
 
 ## 如何验证
 
-- `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh`
+- `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-install.sh`
 - `./skills/vibedevops/scripts/test-health-check.sh`
+- `./skills/vibedevops/scripts/test-install.sh`
 - `actionlint skills/vibedevops/templates/ci/pr-check.yml skills/vibedevops/templates/ci/deploy.yml`
 - `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/vibedevops`
 - `git diff --check`

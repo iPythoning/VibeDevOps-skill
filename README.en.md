@@ -139,6 +139,8 @@ git clone https://github.com/iPythoning/VibeDevOps-skill.git
 cd VibeDevOps-skill && ./install.sh
 ```
 
+The installer converges Claude, Codex, OpenCode/OpenChamber, Cursor, Gemini, Qwen, and Windsurf on `~/AGENTS.md` as the single machine-wide authority, then symlinks `skills/vibedevops` and `skills/flow` into every detected agent. Existing vendor configuration is preserved and backed up before the first pointer/import is added.
+
 Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into your agent's skills directory (`~/.claude/skills/`, `~/.agents/skills/`, Kimi Work's daimon skills dir, etc.).
 
 ---
@@ -159,7 +161,8 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   │   └── scripts/
 │   │       ├── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
 │   │       ├── health-check.sh     # 0–100 readiness score; --min N turns it into a gate
-│   │       └── test-health-check.sh # Positive/negative CI/CD scoring fixtures
+│   │       ├── test-health-check.sh # Positive/negative CI/CD scoring fixtures
+│   │       └── test-install.sh      # Global-rule pointers and skill-install fixtures
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
 ├── install.sh

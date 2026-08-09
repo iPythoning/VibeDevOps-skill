@@ -61,7 +61,11 @@ grep -q '唯一权威规则源是.*~/AGENTS.md' "$FIXTURE_HOME/.qwen/QWEN.md"
 grep -q '# Claude-specific notes' "$FIXTURE_HOME/.claude/CLAUDE.md"
 [ "$(grep -cxF '@../AGENTS.md' "$FIXTURE_HOME/.claude/CLAUDE.md")" = 1 ]
 [ -L "$FIXTURE_HOME/.claude/CLAUDE.md" ]
-CLAUDE_MODE="$(stat -f '%Lp' "$FIXTURE_HOME/shared/claude.md" 2>/dev/null || stat -c '%a' "$FIXTURE_HOME/shared/claude.md")"
+if [ "$(uname -s)" = "Darwin" ]; then
+    CLAUDE_MODE="$(stat -f '%Lp' "$FIXTURE_HOME/shared/claude.md")"
+else
+    CLAUDE_MODE="$(stat -c '%a' "$FIXTURE_HOME/shared/claude.md")"
+fi
 [ "$CLAUDE_MODE" = 600 ]
 CLAUDE_BACKUP="$(find "$FIXTURE_HOME/shared" -maxdepth 1 -type f -name 'claude.md.*.bak' -print -quit)"
 [ -n "$CLAUDE_BACKUP" ] && [ "$(cat "$CLAUDE_BACKUP")" = '# Claude-specific notes' ]

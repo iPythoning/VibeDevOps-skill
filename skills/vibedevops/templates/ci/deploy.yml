@@ -27,7 +27,7 @@ jobs:
       image: ${{ steps.image.outputs.name }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Re-verify merged main
         run: |
           test -x ./scripts/verify.sh
@@ -68,7 +68,7 @@ jobs:
     outputs:
       last-known-good: ${{ steps.lkg.outputs.revision }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Acquire short-lived deployment credentials
         run: |
           test -x ./scripts/auth-deploy.sh
@@ -96,7 +96,7 @@ jobs:
       functional-gate: ${{ steps.functional.outcome }}
       metrics-gate: ${{ steps.metrics.outcome }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: ./scripts/auth-deploy.sh
       # 租约由部署控制器持有；即使整条 Actions run 被取消，TTL 到期也会恢复 LKG。
       - name: Arm independent rollback lease
@@ -131,7 +131,7 @@ jobs:
       metrics-gate: ${{ steps.metrics.outcome }}
       complete-deployment: ${{ steps.complete.outcome }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: ./scripts/auth-deploy.sh
       - name: Renew independent rollback lease
         id: renew
@@ -167,7 +167,7 @@ jobs:
       functional-gate: ${{ steps.functional.outcome }}
       metrics-gate: ${{ steps.metrics.outcome }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: ./scripts/auth-deploy.sh
       - name: Restore last-known-good artifact
         id: restore
@@ -189,7 +189,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Alert pipeline or rollback failure
         run: ./scripts/notify-deploy-failure.sh
 

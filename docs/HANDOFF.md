@@ -5,15 +5,15 @@
 
 ## 当前目标
 
-发布 VibeDevOps v1.1.1：把 Dockerfile、镜像源 fallback、digest 与构建入口完全仓库化；Xserver 与 Mac 从同一 commit 构建，不依赖任何机器私有文件或 cache。
+维护已发布的 VibeDevOps v1.1.1：Dockerfile、镜像源 fallback、digest 与构建入口已经完全仓库化；Xserver 与 Mac 可从同一 commit 构建，不依赖任何机器私有文件或 cache。
 
 ## 当前接棒状态
 
-- 状态：专项复审 APPROVE，Mac/Xserver 同 commit 构建与 smoke 完成，待 PR/main CI 与自动 Release
+- 状态：v1.1.1 已发布；PR #5、main CI、自动 Release 与标签校验全部通过
 - 当前写入者：Codex
 - App / 模型：Codex / GPT-5
-- 分支：feat/container-image
-- HEAD：本次提交见 `git log -1 --oneline`
+- 分支：main
+- HEAD：`65c1834a81186ee75f6f97717a8a8d070dc05b3d`（v1.1.1）
 - 工作树：应为干净；接棒时以 `git status --short` 为准
 - 下一棒：按具体项目任务选择，不默认启用全部模型
 
@@ -81,10 +81,12 @@
 - 2026-08-10：专项代码复审关闭全部 HIGH/MEDIUM 后 APPROVE；超时 fixture 证明父 CLI 先退出、子进程忽略 TERM 时仍会在宽限后清完整独立进程组。
 - 2026-08-10：Xserver 以非 root `gha` 从 GitHub clone 并 detached checkout `a3a4761a102b2ca1e1a34d57f3b6aefbcde5013c`，host 网络冷构建耗时 65 秒；health=healthy、UID=10001、`/healthz=ok`、amd64，tar=45,070,848 bytes。
 - 2026-08-10：Mac 从同一 clean commit `a3a4761a102b2ca1e1a34d57f3b6aefbcde5013c` 构建耗时 11 秒；health=healthy、UID=10001、`/healthz=ok`、amd64，tar=18,261,504 bytes。两端测试 tar/容器/镜像已删除，Xserver checkout 与 Dockerfile 保留，223 个 volume 未触碰。
+- 2026-08-10：PR #5 squash 合并到 main `65c1834a81186ee75f6f97717a8a8d070dc05b3d`；main CI `31364675469` 全绿，自动发布 GitHub Release `v1.1.1`，轻量标签与 Release target 均精确指向该提交。
+- 2026-08-10：发布收尾再次清除本机 1 个遗留测试容器与 `dev`、`default-dev`、`pgid-dev`、`mac` 四个测试镜像；均可从 Git 重建，Docker volume 与业务镜像未触碰。
 
 ## 进行中
 
-- PR/main CI 与 v1.1.1 自动 Release；合并后再次核对 tag/release commit 与 main CI。
+- 无。v1.1.1 发布链已经闭环。
 
 ## 已知坑 / 注意事项
 
@@ -100,11 +102,11 @@
 
 ## 下一步
 
-创建并合并 v1.1.1 PR，等待 main CI 自动发布 Release。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再补齐该应用自己的 OIDC、部署控制器和功能门。
+由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再补齐该应用自己的 OIDC、部署控制器和功能门。模板发布不等于擅自部署未指定的业务应用。
 
 ## 如何验证
 
-2026-08-10 当前验证已通过：build runner、container fallback/超时强杀、image lifecycle、CI/CD health、全局安装器新旧 HOME fixtures，Mac 真实 DaoCloud/阿里云镜像构建与非 root smoke，Actionlint v1.7.7、skill quick validate、Gitleaks 和 `git diff --check`。Reasonix 本机验证按用户要求不重复执行；仓库 CI 继续固定 v1.21.5 + SHA256 验证。
+2026-08-10 当前验证已通过：build runner、container fallback/超时强杀、image lifecycle、CI/CD health、全局安装器新旧 HOME fixtures，Mac 真实 DaoCloud/阿里云镜像构建与非 root smoke，Actionlint v1.7.7、skill quick validate、Gitleaks 和 `git diff --check`。PR #5 与 main CI `31364675469` 全绿，GitHub Release `v1.1.1`/tag/target SHA 一致。Reasonix 本机验证按用户要求不重复执行；仓库 CI 继续固定 v1.21.5 + SHA256 验证。
 
 - `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-install.sh`
 - `./skills/vibedevops/scripts/test-health-check.sh`

@@ -81,6 +81,10 @@ description: Vibe coding 但不放弃理解，生产级 DevOps 保障。用于 /
 
 **本机全局同步：** `install.sh` 将 Claude、Codex、OpenCode/OpenChamber、Cursor、Gemini、Qwen、Windsurf 的用户级入口收敛到 `~/AGENTS.md`，并把 VibeDevOps/Flow 以符号链接安装到各 Agent。厂商专属配置只追加权威指针或 import，首次修改前备份；OpenCode 使用官方全局入口 `~/.config/opencode/AGENTS.md` 的直链，避免规则复制后漂移。
 
+**原生 Reasonix 运行时：** `templates/reasonix-runtime/` 提供 macOS `launchd` 与 Linux `systemd --user` 常驻模板，幂等配置 Reasonix 的 OpenCode Go Provider、凭据文件、85% 官方 compaction 阈值和 loopback `/healthz`。从仓库根目录运行 `./install.sh --with-reasonix-runtime`；OpenChamber 的 `Reasonix-Go` 仍只是 Reasonix 风格 Agent，不冒充原生进程。
+
+**镜像生命周期：** `templates/image-lifecycle/` 同时治理开发机/部署机 Docker 与 GHCR。任何容器引用的镜像、每仓库最新版本、current/last-known-good digest 和生产/回滚 tag 都必须保护；禁止 `docker image rm --force` 与自动删除 volume。`docker builder prune --force` 仅用于关闭交互确认，必须限定过期且未使用 cache。成功部署后回收部署机旧镜像；下次构建前必须重试清理欠账并通过容量门禁；GHCR 每日执行 retention。清理失败应告警并阻止资源继续恶化，但不回滚已经通过功能/指标门的健康发布。本机 Docker 守卫用 `./install.sh --with-image-lifecycle`；只有明确授予 `delete:packages` 后才用 `--with-ghcr-retention` 增加账号级清理。
+
 **踩过的坑（部署脚本作者注意）：**
 - macOS 自带 bash 3.2 下 `set -u` 对空数组展开误报 unbound variable——不要用 `set -u`，用 `${arr[@]+"${arr[@]}"}` 防御式展开
 - `.gitignore` 忽略整个 `docs/` 时交接文件会被漏掉——提交用 `git add -f`，文件一旦被跟踪即恢复正常跟踪
@@ -104,7 +108,8 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 ### 4.2 CI 三件套（`templates/ci/`）
 
 - `pr-check.yml`：密钥扫描 + lint/type/test，PR 必过（含 Node/Python/Go 三语言注释替换段）
-- `deploy.yml`：PR 合并进 main 后重验合并结果、构建一次带 provenance/SBOM 的不可变制品，以 OIDC 短期身份自动部署；功能层 smoke/canary 失败自动回滚并复验
+- `deploy.yml`：PR 合并进 main 后，按 Xserver→Mac 构建 fallback、GitHub hosted→Xserver GHCR push fallback 路由同一份不可变制品，以 OIDC 短期身份自动部署；功能层 smoke/canary 失败自动回滚并复验，端到端强制小于 30 分钟
+- `image-retention.yml`：每日清理 GHCR 过期 manifest/SHA 版本，至少保留 30 个版本并保护生产/回滚 tag；部署机清理由 `deploy.sh cleanup-images` 在成功推广后执行
 - 回滚标准动作：见 RUNBOOK
 
 **授权边界：PR 合并就是生产部署授权。** 审核、CI 和发布时间决策都在合并前完成；合并后不得再次等待人工 approve。`workflow_dispatch` 只用于重试、回滚和事故恢复，不能成为正常发布的唯一入口。需要等待发布时间窗口时延迟合并 PR。

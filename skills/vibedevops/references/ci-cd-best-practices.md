@@ -10,6 +10,8 @@
 6. **验证到功能层**：部署后发真实请求验证关键路径，不只检查进程或 `/health`。
 7. **失败自动止损**：smoke/canary 失败自动推广上一绿制品，回滚后再次验证；工作流仍保持失败并告警。
 8. **可追溯**：记录 commit、制品 digest、workflow URL、部署目标、指标判定和回滚结果。
+9. **制品有生命周期**：成功发布后清理部署机未引用的旧镜像与 build cache；Registry 设每日 retention。current/last-known-good、生产/回滚 tag 与至少 30 个最新 package versions 永久/窗口内保护。
+10. **容灾有顺序与截止时间**：Xserver 构建优先、Mac fallback；GitHub hosted push 优先、Xserver fallback；独立 hosted watchdog 与部署控制器共同强制从 workflow 创建到原子完成部署不得超过 30 分钟，超时取消并回滚。
 
 ## 安全与可靠性
 
@@ -21,6 +23,7 @@
 - 自动回滚失败时立即告警并进入 RUNBOOK；禁止静默吞错或继续部署下一版本。
 - 在 canary 前由独立部署控制器建立带充足 TTL 的可续租回滚租约，在推广开始前续租；只有生产功能门和指标门全绿后，才由控制器原子完成“更新 last-known-good + 解除租约”。这样即使 Actions 整条 run 被取消、runner 失联或 GitHub 不再调度 rollback job，控制器仍会自动恢复 last-known-good。显式 rollback job 用于快速恢复，租约是最终保险。
 - 发布过程中禁止把“取消 workflow”当作回滚操作；取消只停止 GitHub 调度，不保证已执行的生产副作用被撤销。
+- 镜像清理禁止 `docker image rm --force` 和自动删除 volume；所有容器引用都保护。`docker builder prune --force` 仅关闭交互确认，必须限定过期且未使用 cache。清理失败单独告警并在下一次构建前重试；容量或清理债务超限时禁止制造新镜像，但不因容量维护失败回滚已经验证为健康的生产版本。
 - hosted CI 额度或容量不足时切换到受监控的 self-hosted runner/外部 CD 控制器；正常发布路径仍由 `push main` 自动触发，不能退化为人工命令。
 
 ## 持续交付与持续部署
@@ -31,7 +34,8 @@ DORA 将持续交付定义为软件始终处于可按需安全发布状态；持
 
 - `scripts/verify.sh`：对合并后的 main 运行完整确定性门禁。
 - `scripts/auth-deploy.sh`：用 GitHub OIDC 换短期身份；不得输出 token。
-- `deploy.sh`：实现 `last-known-good`、`verify-artifact`、`arm-rollback <lkg> --ttl <duration>`、`renew-rollback --ttl <duration>`、`canary`、`promote`、`complete-deployment <artifact>`、`rollback`；回滚租约必须由 Actions runner 之外的部署控制器持有，`complete-deployment` 只在生产功能门与指标门全绿后原子更新 last-known-good 并解除租约。
+- `deploy.sh`：实现 `last-known-good`、`verify-artifact`、`arm-rollback <lkg> --ttl <duration>`、`renew-rollback --ttl <duration>`、`canary`、`promote`、`complete-deployment <artifact> --deadline-epoch <unix-seconds>`、`rollback`、`cleanup-images --keep <current> --keep <lkg> --retention-hours <n>`、`cleanup-images --retry-pending --retention-hours <n>`、`image-capacity-check --max-disk-percent <n> --max-cleanup-debt <n>`；回滚租约必须由 Actions runner 之外的部署控制器持有，`complete-deployment` 只在 deadline 前且生产功能门与指标门全绿、Registry 的 `production`/`rollback` tag 已更新后原子更新 last-known-good 并解除租约。
+- `scripts/cleanup-ghcr-versions.sh` + `image-retention.yml`：每日清理过期 GHCR versions，最小权限仅为 `contents: read` 与 `packages: write`。
 - `scripts/smoke-test.sh <canary|production>`：验证真实关键业务路径。
 - `scripts/metrics-gate.sh <canary|production>`：按错误率、延迟、饱和度和业务成功率返回明确退出码。
 - `scripts/notify-deploy-failure.sh`：通知流水线、canary、推广或回滚失败，并附 workflow URL。

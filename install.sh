@@ -5,6 +5,22 @@ set -e
 
 REPO_URL="https://github.com/iPythoning/VibeDevOps-skill.git"
 REPO_DIR="${VIBEDEVOPS_REPO_DIR:-$HOME/Documents/GitHub/VibeDevOps-skill}"
+WITH_REASONIX_RUNTIME=0
+WITH_IMAGE_LIFECYCLE=0
+WITH_GHCR_RETENTION=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --with-reasonix-runtime) WITH_REASONIX_RUNTIME=1; shift ;;
+        --with-image-lifecycle) WITH_IMAGE_LIFECYCLE=1; shift ;;
+        --with-ghcr-retention) WITH_IMAGE_LIFECYCLE=1; WITH_GHCR_RETENTION=1; shift ;;
+        -h|--help)
+            echo "Usage: ./install.sh [--with-reasonix-runtime] [--with-image-lifecycle] [--with-ghcr-retention]"
+            exit 0
+            ;;
+        *) echo "❌ 未知参数: $1" >&2; exit 1 ;;
+    esac
+done
 
 echo "🚀 安装 VibeDevOps skills 到本机所有 Agent..."
 
@@ -188,6 +204,20 @@ if [ -d "$KIMI_SKILLS" ]; then
         fi
         echo "   ✅ Kimi Work -> $KIMI_SKILLS/$skill"
     done
+fi
+
+# 6. 可选：配置原生 Reasonix 常驻服务与 OpenCode Go Provider
+if [ "$WITH_REASONIX_RUNTIME" = "1" ]; then
+    echo "⚙️  配置原生 Reasonix runtime..."
+    "$REPO_DIR/skills/vibedevops/templates/reasonix-runtime/install.sh" --enable-linger
+fi
+
+# 7. 可选：安装本机 Docker 镜像与 build cache 每日容量守卫
+if [ "$WITH_IMAGE_LIFECYCLE" = "1" ]; then
+    echo "⚙️  配置本机镜像生命周期守卫..."
+    image_guard_args=()
+    [ "$WITH_GHCR_RETENTION" = "0" ] || image_guard_args+=(--with-ghcr)
+    "$REPO_DIR/skills/vibedevops/templates/image-lifecycle/install-local-guard.sh" "${image_guard_args[@]}"
 fi
 
 echo ""

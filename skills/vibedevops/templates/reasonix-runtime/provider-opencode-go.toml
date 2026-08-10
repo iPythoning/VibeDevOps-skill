@@ -1,0 +1,10 @@
+[[providers]]
+name           = "opencode-go"
+kind           = "openai"
+base_url       = "https://opencode.ai/zen/go/v1"
+models         = ["glm-5.2", "glm-5.1", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "deepseek-v4-pro", "deepseek-v4-flash", "mimo-v2.5-pro", "mimo-v2.5"]
+vision_models  = ["kimi-k3"]
+default        = "deepseek-v4-flash"
+api_key_env    = "OPENCODE_GO_API_KEY"
+context_window = 128000
+model_overrides = { "deepseek-v4-flash" = { reasoning_protocol = "deepseek", supported_efforts = ["disabled", "high", "max"], default_effort = "high" }, "deepseek-v4-pro" = { reasoning_protocol = "deepseek", supported_efforts = ["disabled", "high", "max"], default_effort = "high" }, "kimi-k2.6" = { reasoning_protocol = "openai", supported_efforts = ["low", "medium", "high"], default_effort = "high" }, "kimi-k2.7-code" = { reasoning_protocol = "openai", supported_efforts = ["low", "medium", "high"], default_effort = "high" }, "kimi-k3" = { reasoning_protocol = "openai", supported_efforts = ["high", "max"], default_effort = "max", context_window = 1048576 } }

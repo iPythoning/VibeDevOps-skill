@@ -45,6 +45,48 @@ build-gate.sh /path/to/repo --cmd "npm ci && npm test && npm run build"
 4. **镜像走私有 registry**：构建机不依赖公共镜像加速——在网络通畅的机器上 build/push builder 镜像到私有 registry（如 GHCR），构建机只 pull。公共 Docker Hub 在部分网络下**完全不可达**，`FROM node:22` 这类裸 Hub 引用是定时炸弹。
 5. **依赖源运行时注入 + 缓存卷**：`NPM_REGISTRY` / `PIP_INDEX` 环境变量运行时注入（脚本已内置），通用官方镜像（`python:3.12-slim` 等）即插即用，不必为换源重烤镜像；包缓存挂命名卷（脚本已内置 `build-gate-npm` / `build-gate-pip`），实测热缓存能把门禁耗时打到冷缓存的一半以下。
 6. **构建机 docker 一律 `--network host`**（脚本已内置）：NAS / 家庭服务器 / 品牌小主机的 docker 常由厂商系统托管（自定义网络栈），默认 docker0 桥不存在是常态不是故障——显式 host 网络让桥的状态与构建彻底无关。也绝不重启这类机器的 docker daemon（上面跑着厂商全家桶）。
+
+## Xserver → Mac → GHCR → 云端（30 分钟硬上限）
+
+`templates/ci/deploy.yml` 固定为以下容灾链，不靠人工改 runner：
+
+1. GitHub hosted 控制 job 查询 self-hosted runner 状态，只选择 `online && !busy` 的机器；Xserver 优先，构建失败才用 Mac。
+2. 两台机器都构建 `linux/amd64`，同一 Git SHA 只选择首个成功产物；未压缩传输的临时 artifact 仅保留 1 天。
+3. GitHub hosted runner 优先把该产物 push GHCR 并生成 provenance/SBOM；失败才由 Xserver 下载同一产物并 push。
+4. 云端只接收 `image@sha256:digest`，经过 canary、功能门和指标门后才推广；旧 LKG 与新 production 都有 Registry tag 保护。
+5. workflow 创建时间即开始计时；独立 GitHub hosted watchdog 不依赖 self-hosted jobs，会在 1800 秒通过 Actions API 强制取消仍未完成的 workflow。状态查询瞬时失败会保留 watchdog 并重试；deadline 后取消请求持续重试到成功或 watchdog 35 分钟硬超时。`complete-deployment` 同时校验 deadline，超时不更新 LKG/不解除租约；显式 rollback 与独立 30 分钟租约共同兜底恢复。
+
+目标仓库需要两个专用、持久在线并启用自动更新的 repository runners：
+
+```text
+Xserver labels: self-hosted,linux,x64,xserver
+Mac labels:     self-hosted,macOS,mac-builder
+```
+
+如需自定义 labels，设置 Actions variables（JSON 数组）：
+
+```text
+VIBEDEVOPS_XSERVER_RUNNER=["self-hosted","linux","x64","xserver"]
+VIBEDEVOPS_MAC_RUNNER=["self-hosted","macOS","mac-builder"]
+```
+
+再设置 repository secret `VIBEDEVOPS_RUNNER_READ_TOKEN`：使用 fine-grained token，仅授予目标仓库 `Administration: read`，只供控制 job 读取 runner 的 online/busy 状态。构建和 GHCR push 仍使用每个 job 的短期 `GITHUB_TOKEN`；生产身份只在 hosted deployment job 用 OIDC 获取，不进入 Xserver 或 Mac。
+
+在两台机器注册常驻 runner（registration token 只经 stdin 传递）：
+
+```bash
+ssh xserver-lan 'mkdir -p ~/.local/bin'
+scp install-github-runner.sh xserver-lan:~/.local/bin/install-github-runner.sh
+gh api --method POST repos/OWNER/REPO/actions/runners/registration-token --jq .token \
+  | ssh xserver-lan '~/.local/bin/install-github-runner.sh --repo OWNER/REPO --role xserver --token-stdin'
+
+gh api --method POST repos/OWNER/REPO/actions/runners/registration-token --jq .token \
+  | ./install-github-runner.sh --repo OWNER/REPO --role mac --token-stdin
+```
+
+Xserver 的 SSH 用户必须是 docker 组中的专用非 root 用户；安装器会拒绝 root。不要把 token 拼进 SSH 命令或日志；stdin 读入后仅通过 runner 官方 `ACTIONS_RUNNER_INPUT_TOKEN` 临时环境传入，绝不进入进程 argv 或服务文件。安装器固定校验官方 runner v2.336.0 的 SHA256，Linux 使用 systemd user 常驻并要求 lingering，systemd 默认 control-group stop 会清理完整 listener 进程树；Mac 使用 launchd 常驻且在接单前自动启动 Docker Desktop。两端 listener 都通过 `env -i` 最小环境启动，避免把登录会话中的 API key、代理凭据或其他本机变量带进 runner。
+
+30 分钟不是说明文字：runner route 1 分钟、容量门禁 2 分钟（并行）、Xserver/Mac 每次构建 6 分钟、每个 push 尝试 3 分钟、两个选择 job 各 1 分钟、prepare 1 分钟、canary/promote 各 3 分钟；即使两级 build 和两级 push 都走 fallback，成功路径的阶段预算仍不超过 28 分钟，并由部署控制器再次核验绝对 deadline。image tar 超过 2 GiB 会直接失败。两台机器必须是该生产链的专用 runner，不能同时承接不可信 PR 或其他长任务；Dockerfile 需要热缓存且输出 artifact 应保持精简，否则 job 会按预算失败，而不是悄悄放宽上限。
 7. **代理规避 + 双路径 ssh**：构建机 ssh 配两条路——overlay 网络（Tailscale 类，CGNAT `100.64/10` 段必须走 utun 虚拟网卡，**绝不能绑物理网卡**）为主，局域网 IP + `BindInterface` 绑物理网卡为兜底；两条路径的 host key 交叉比对一致后再收录。脚本里禁止裸域名和 `root@IP`，路由策略统一收敛在 `~/.ssh/config`；不依赖修改代理工具的配置。
 
 ## 下游 fork 约定（消灭双副本漂移）

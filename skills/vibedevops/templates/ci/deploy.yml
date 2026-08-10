@@ -1,5 +1,4 @@
-# deploy.yml — PR 合并进 main 后自动构建、canary、推广或回滚
-# production / production-canary Environment 可用于 secrets 与审计，但正常发布不配置人工审批。
+# deploy.yml — Xserver/Mac 构建容灾、GH hosted/Xserver 推送容灾、30 分钟云端发布
 name: Deploy
 
 on:
@@ -9,58 +8,370 @@ on:
 permissions:
   contents: read
 
-# 整条生产流水线串行；后续提交必须等待当前推广或回滚结束。
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
-  build:
+  deadline_watchdog:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      # 独立 hosted job 不依赖 self-hosted 队列；即使 build job 排队，也会在绝对 deadline 强制取消。
+      - name: Cancel any deployment that reaches 30 minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          created_at=""
+          until [ -n "$created_at" ]; do
+            created_at="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at 2>/dev/null || true)"
+            [ -n "$created_at" ] || sleep 5
+          done
+          started_at="$(date -u -d "$created_at" +%s)"
+          deadline=$((started_at + 1800))
+          while :; do
+            if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/jobs.json"; then
+              promote="$(jq -r '[.[].jobs[] | select(.name == "promote") | .conclusion][0] // ""' "$RUNNER_TEMP/jobs.json")"
+              evidence="$(jq -r '[.[].jobs[] | select(.name == "evidence") | .conclusion][0] // ""' "$RUNNER_TEMP/jobs.json")"
+              [ "$promote" != "success" ] || exit 0
+              [ -z "$evidence" ] || exit 0
+            fi
+            remaining=$((deadline - $(date +%s)))
+            if [ "$remaining" -le 0 ]; then
+              until gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/force-cancel" || \
+                gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/cancel"; do
+                echo "watchdog 取消请求失败，5 秒后重试" >&2
+                sleep 5
+              done
+              echo "发布超过 1800 秒，watchdog 已提交取消" >&2
+              exit 1
+            fi
+            [ "$remaining" -lt 15 ] && wait_seconds="$remaining" || wait_seconds=15
+            sleep "$wait_seconds"
+          done
+
+  runner_route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      started-at: ${{ steps.started.outputs.epoch }}
+      xserver-ready: ${{ steps.runners.outputs.xserver }}
+      mac-ready: ${{ steps.runners.outputs.mac }}
+    steps:
+      - name: Record workflow creation time
+        id: started
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          created_at="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .created_at)"
+          epoch="$(date -u -d "$created_at" +%s)"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+      # Fine-grained token 只需目标仓库 Administration: read，用于避免向离线/busy runner 排队。
+      - name: Select idle build runners
+        id: runners
+        env:
+          GH_TOKEN: ${{ secrets.VIBEDEVOPS_RUNNER_READ_TOKEN }}
+          XSERVER_LABELS: ${{ vars.VIBEDEVOPS_XSERVER_RUNNER || '["self-hosted","linux","x64","xserver"]' }}
+          MAC_LABELS: ${{ vars.VIBEDEVOPS_MAC_RUNNER || '["self-hosted","macOS","mac-builder"]' }}
+        run: |
+          test -n "$GH_TOKEN"
+          jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' <<<"$XSERVER_LABELS" >/dev/null
+          jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' <<<"$MAC_LABELS" >/dev/null
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runners?per_page=100" > "$RUNNER_TEMP/runners.json"
+          ready() {
+            jq -r --argjson wanted "$1" '
+              [.[].runners[] | select(
+                .status == "online" and (.busy | not) and
+                (($wanted - [.labels[].name]) | length == 0)
+              )] | length > 0
+            ' "$RUNNER_TEMP/runners.json"
+          }
+          xserver="$(ready "$XSERVER_LABELS")"
+          mac="$(ready "$MAC_LABELS")"
+          [ "$xserver" = "true" ] || [ "$mac" = "true" ] || { echo "没有空闲的 Xserver/Mac runner" >&2; exit 1; }
+          echo "xserver=$xserver" >> "$GITHUB_OUTPUT"
+          echo "mac=$mac" >> "$GITHUB_OUTPUT"
+
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Acquire short-lived deployment credentials
+        run: ./scripts/auth-deploy.sh
+      - name: Retry pending cleanup
+        run: ./deploy.sh cleanup-images --retry-pending --retention-hours 168
+      - name: Enforce deployment image capacity
+        run: ./deploy.sh image-capacity-check --max-disk-percent 85 --max-cleanup-debt 0
+
+  build_xserver:
+    needs: [runner_route, capacity]
+    if: ${{ needs.runner_route.outputs.xserver-ready == 'true' }}
+    runs-on: ${{ fromJSON(vars.VIBEDEVOPS_XSERVER_RUNNER || '["self-hosted","linux","x64","xserver"]') }}
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Re-verify merged main
+        run: ./scripts/verify.sh
+      - name: Resolve immutable image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          keep-state: true
+      - name: Build immutable linux/amd64 image on Xserver
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          provenance: false
+          sbom: false
+      - name: Enforce portable artifact size budget
+        run: |
+          size_kib="$(du -k "${{ runner.temp }}/image.tar" | awk '{print $1}')"
+          [ "$size_kib" -le 2097152 ] || { echo "image.tar 超过 2 GiB，无法保证 30 分钟链路" >&2; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-xserver-${{ github.run_id }}
+          path: ${{ runner.temp }}/image.tar
+          compression-level: 0
+          retention-days: 1
+      - name: Bound Xserver BuildKit cache
+        if: always()
+        run: docker builder prune --force --filter until=168h
+
+  build_mac:
+    needs: [runner_route, capacity, build_xserver]
+    if: ${{ always() && needs.capacity.result == 'success' && needs.runner_route.outputs.mac-ready == 'true' && needs.build_xserver.result != 'success' }}
+    runs-on: ${{ fromJSON(vars.VIBEDEVOPS_MAC_RUNNER || '["self-hosted","macOS","mac-builder"]') }}
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Re-verify merged main
+        run: ./scripts/verify.sh
+      - name: Resolve immutable image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          keep-state: true
+      - name: Build immutable linux/amd64 image on Mac fallback
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          provenance: false
+          sbom: false
+      - name: Enforce portable artifact size budget
+        run: |
+          size_kib="$(du -k "${{ runner.temp }}/image.tar" | awk '{print $1}')"
+          [ "$size_kib" -le 2097152 ] || { echo "image.tar 超过 2 GiB，无法保证 30 分钟链路" >&2; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-mac-${{ github.run_id }}
+          path: ${{ runner.temp }}/image.tar
+          compression-level: 0
+          retention-days: 1
+      - name: Bound Mac BuildKit cache
+        if: always()
+        run: docker builder prune --force --filter until=168h
+
+  select_build:
+    needs: [runner_route, capacity, build_xserver, build_mac]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      artifact: ${{ steps.select.outputs.artifact }}
+      source: ${{ steps.select.outputs.source }}
+    steps:
+      - name: Select first successful build
+        id: select
+        env:
+          XSERVER_RESULT: ${{ needs.build_xserver.result }}
+          MAC_RESULT: ${{ needs.build_mac.result }}
+        run: |
+          if [ "$XSERVER_RESULT" = "success" ]; then
+            echo "artifact=image-xserver-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "source=xserver" >> "$GITHUB_OUTPUT"
+          elif [ "$MAC_RESULT" = "success" ]; then
+            echo "artifact=image-mac-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "source=mac" >> "$GITHUB_OUTPUT"
+          else
+            echo "Xserver 与 Mac 均未产出可部署制品" >&2
+            exit 1
+          fi
+
+  push_github:
+    needs: select_build
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
     outputs:
-      image: ${{ steps.image.outputs.name }}
-      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Re-verify merged main
-        run: |
-          test -x ./scripts/verify.sh
-          ./scripts/verify.sh
-      - name: Resolve immutable image name
-        id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ needs.select_build.outputs.artifact }}
+          path: image
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build once and push SBOM
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - name: Push from GitHub hosted runner
+        id: push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker load --input image/image.tar
+          docker push "$image:$GITHUB_SHA"
+          digest="$(docker buildx imagetools inspect "$image:$GITHUB_SHA" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          context: .
-          push: true
-          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
-          provenance: mode=max
-          sbom: true
-      - name: Sign build provenance
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+          image: ${{ steps.push.outputs.image }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
-          subject-name: ${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
           push-to-registry: true
 
-  prepare:
-    needs: build
+  push_xserver:
+    needs: [runner_route, select_build, push_github]
+    if: ${{ always() && needs.select_build.result == 'success' && needs.push_github.result != 'success' && needs.runner_route.outputs.xserver-ready == 'true' }}
+    runs-on: ${{ fromJSON(vars.VIBEDEVOPS_XSERVER_RUNNER || '["self-hosted","linux","x64","xserver"]') }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ needs.select_build.outputs.artifact }}
+          path: image
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          keep-state: true
+      - name: Push from Xserver fallback
+        id: push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker load --input image/image.tar
+          docker push "$image:$GITHUB_SHA"
+          digest="$(docker buildx imagetools inspect "$image:$GITHUB_SHA" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.push.outputs.image }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+  select_push:
+    needs: [select_build, push_github, push_xserver]
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+      digest: ${{ steps.select.outputs.digest }}
+      source: ${{ steps.select.outputs.source }}
+    steps:
+      - name: Select first successful GHCR push
+        id: select
+        env:
+          GITHUB_RESULT: ${{ needs.push_github.result }}
+          GITHUB_IMAGE: ${{ needs.push_github.outputs.image }}
+          GITHUB_DIGEST: ${{ needs.push_github.outputs.digest }}
+          XSERVER_RESULT: ${{ needs.push_xserver.result }}
+          XSERVER_IMAGE: ${{ needs.push_xserver.outputs.image }}
+          XSERVER_DIGEST: ${{ needs.push_xserver.outputs.digest }}
+        run: |
+          if [ "$GITHUB_RESULT" = "success" ]; then
+            image="$GITHUB_IMAGE"; digest="$GITHUB_DIGEST"; source=github-hosted
+          elif [ "$XSERVER_RESULT" = "success" ]; then
+            image="$XSERVER_IMAGE"; digest="$XSERVER_DIGEST"; source=xserver
+          else
+            echo "GitHub hosted 与 Xserver 均未成功推送 GHCR" >&2
+            exit 1
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    needs: select_push
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
     environment: production
     permissions:
       contents: read
@@ -69,23 +380,19 @@ jobs:
       last-known-good: ${{ steps.lkg.outputs.revision }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Acquire short-lived deployment credentials
-        run: |
-          test -x ./scripts/auth-deploy.sh
-          ./scripts/auth-deploy.sh
+      - run: ./scripts/auth-deploy.sh
       - name: Resolve and verify last-known-good artifact
         id: lkg
         run: |
-          test -x ./deploy.sh
           revision="$(./deploy.sh last-known-good)"
           [[ "$revision" =~ ^([a-z0-9]+([._-][a-z0-9]+)*)(:[0-9]+)?(/[a-z0-9]+([._-][a-z0-9]+)*)+@sha256:[0-9a-f]{64}$ ]]
           ./deploy.sh verify-artifact "$revision"
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
   canary:
-    needs: [build, prepare]
+    needs: [select_push, prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     environment: production-canary
     permissions:
       contents: read
@@ -98,16 +405,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: ./scripts/auth-deploy.sh
-      # 租约由部署控制器持有；即使整条 Actions run 被取消，TTL 到期也会恢复 LKG。
       - name: Arm independent rollback lease
         id: lease
         env:
           LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
-        run: ./deploy.sh arm-rollback "$LAST_KNOWN_GOOD" --ttl 2h
+        run: ./deploy.sh arm-rollback "$LAST_KNOWN_GOOD" --ttl 30m
       - name: Deploy canary
         id: deploy
         env:
-          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
         run: ./deploy.sh canary "$ARTIFACT"
       - name: Canary functional gate
         id: functional
@@ -117,29 +423,32 @@ jobs:
         run: ./scripts/metrics-gate.sh canary
 
   promote:
-    needs: [build, prepare, canary]
+    needs: [runner_route, select_push, prepare, canary]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     environment: production
     permissions:
       contents: read
+      packages: write
       id-token: write
     outputs:
       rollback-lease-renewal: ${{ steps.renew.outcome }}
       deploy: ${{ steps.deploy.outcome }}
       functional-gate: ${{ steps.functional.outcome }}
       metrics-gate: ${{ steps.metrics.outcome }}
+      protect-artifacts: ${{ steps.protect.outcome }}
+      sla: ${{ steps.sla.outcome }}
       complete-deployment: ${{ steps.complete.outcome }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: ./scripts/auth-deploy.sh
       - name: Renew independent rollback lease
         id: renew
-        run: ./deploy.sh renew-rollback --ttl 2h
+        run: ./deploy.sh renew-rollback --ttl 15m
       - name: Promote canary artifact to production
         id: deploy
         env:
-          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
         run: ./deploy.sh promote "$ARTIFACT"
       - name: Production functional gate
         id: functional
@@ -147,20 +456,46 @@ jobs:
       - name: Production metrics gate
         id: metrics
         run: ./scripts/metrics-gate.sh production
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Protect production and rollback artifacts in GHCR
+        id: protect
+        env:
+          IMAGE: ${{ needs.select_push.outputs.image }}
+          CURRENT_ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE:rollback" "$LAST_KNOWN_GOOD"
+          docker buildx imagetools create --tag "$IMAGE:production" "$CURRENT_ARTIFACT"
+      - name: Reserve time to complete inside 30-minute SLA
+        id: sla
+        env:
+          STARTED_AT: ${{ needs.runner_route.outputs.started-at }}
+        run: |
+          deadline=$((STARTED_AT + 1800))
+          remaining=$((deadline - $(date +%s)))
+          echo "remaining-seconds=$remaining" >> "$GITHUB_OUTPUT"
+          [ "$remaining" -ge 120 ] || { echo "发布已无足够时间在 30 分钟内原子完成" >&2; exit 1; }
       - name: Atomically mark known-good and disarm rollback lease
         id: complete
         env:
-          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
-        run: ./deploy.sh complete-deployment "$ARTIFACT"
+          ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
+          STARTED_AT: ${{ needs.runner_route.outputs.started-at }}
+        run: ./deploy.sh complete-deployment "$ARTIFACT" --deadline-epoch "$((STARTED_AT + 1800))"
 
   rollback:
-    needs: [build, prepare, canary, promote]
+    needs: [select_push, prepare, canary, promote]
     if: ${{ always() && (needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 4
     environment: production
     permissions:
       contents: read
+      packages: write
       id-token: write
     outputs:
       restore: ${{ steps.restore.outcome }}
@@ -180,65 +515,86 @@ jobs:
       - name: Verify rollback metrics
         id: metrics
         run: ./scripts/metrics-gate.sh production
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Restore production protection tag
+        env:
+          IMAGE: ${{ needs.select_push.outputs.image }}
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+        run: docker buildx imagetools create --tag "$IMAGE:production" "$LAST_KNOWN_GOOD"
+
+  cleanup:
+    needs: [select_push, prepare, promote]
+    if: ${{ needs.promote.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - run: ./scripts/auth-deploy.sh
+      - name: Reclaim stale deployment images and build cache
+        env:
+          CURRENT_ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
+          LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+        run: ./deploy.sh cleanup-images --keep "$CURRENT_ARTIFACT" --keep "$LAST_KNOWN_GOOD" --retention-hours 168
 
   alert:
-    needs: [build, prepare, canary, promote, rollback]
-    if: ${{ always() && (needs.build.result == 'failure' || needs.prepare.result == 'failure' || needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled' || needs.rollback.result == 'failure' || needs.rollback.result == 'cancelled') }}
+    needs: [runner_route, capacity, build_xserver, build_mac, select_build, push_github, push_xserver, select_push, prepare, canary, promote, rollback, cleanup]
+    if: ${{ always() && (needs.runner_route.result == 'failure' || needs.capacity.result == 'failure' || needs.select_build.result == 'failure' || needs.select_push.result == 'failure' || needs.prepare.result == 'failure' || needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled' || needs.rollback.result == 'failure' || needs.rollback.result == 'cancelled' || needs.cleanup.result == 'failure') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - name: Alert pipeline or rollback failure
-        run: ./scripts/notify-deploy-failure.sh
+      - run: ./scripts/notify-deploy-failure.sh
 
   evidence:
-    needs: [build, prepare, canary, promote, rollback]
+    needs: [runner_route, capacity, build_xserver, build_mac, select_build, push_github, push_xserver, select_push, prepare, canary, promote, rollback, cleanup]
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 1
     permissions:
       contents: read
     steps:
       - name: Record deployment evidence
         env:
-          ARTIFACT: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          STARTED_AT: ${{ needs.runner_route.outputs.started-at }}
+          ARTIFACT: ${{ needs.select_push.outputs.image }}@${{ needs.select_push.outputs.digest }}
           LAST_KNOWN_GOOD: ${{ needs.prepare.outputs.last-known-good }}
+          BUILD_SOURCE: ${{ needs.select_build.outputs.source }}
+          PUSH_SOURCE: ${{ needs.select_push.outputs.source }}
           CANARY_LEASE: ${{ needs.canary.outputs.rollback-lease }}
-          CANARY_DEPLOY: ${{ needs.canary.outputs.deploy }}
           CANARY_FUNCTIONAL: ${{ needs.canary.outputs.functional-gate }}
           CANARY_METRICS: ${{ needs.canary.outputs.metrics-gate }}
-          PROMOTE_RENEWAL: ${{ needs.promote.outputs.rollback-lease-renewal }}
-          PROMOTE_DEPLOY: ${{ needs.promote.outputs.deploy }}
           PROMOTE_FUNCTIONAL: ${{ needs.promote.outputs.functional-gate }}
           PROMOTE_METRICS: ${{ needs.promote.outputs.metrics-gate }}
+          PROMOTE_PROTECT: ${{ needs.promote.outputs.protect-artifacts }}
+          PROMOTE_SLA: ${{ needs.promote.outputs.sla }}
           PROMOTE_COMPLETE: ${{ needs.promote.outputs.complete-deployment }}
           ROLLBACK_RESTORE: ${{ needs.rollback.outputs.restore }}
-          ROLLBACK_FUNCTIONAL: ${{ needs.rollback.outputs.functional-gate }}
-          ROLLBACK_METRICS: ${{ needs.rollback.outputs.metrics-gate }}
         run: |
+          elapsed=unknown
+          [ -z "$STARTED_AT" ] || elapsed="$(( $(date +%s) - STARTED_AT ))s"
           {
             echo "## Production deployment"
-            echo "- target: production"
             echo "- commit: $GITHUB_SHA"
             echo "- artifact: $ARTIFACT"
             echo "- last-known-good: $LAST_KNOWN_GOOD"
-            echo "- build: ${{ needs.build.result }}"
-            echo "- canary: ${{ needs.canary.result }}"
-            echo "  - rollback lease: $CANARY_LEASE"
-            echo "  - deploy: $CANARY_DEPLOY"
-            echo "  - functional gate: $CANARY_FUNCTIONAL"
-            echo "  - metrics gate: $CANARY_METRICS"
-            echo "- promote: ${{ needs.promote.result }}"
-            echo "  - rollback lease renewal: $PROMOTE_RENEWAL"
-            echo "  - deploy: $PROMOTE_DEPLOY"
-            echo "  - functional gate: $PROMOTE_FUNCTIONAL"
-            echo "  - metrics gate: $PROMOTE_METRICS"
-            echo "  - complete deployment: $PROMOTE_COMPLETE"
-            echo "- rollback: ${{ needs.rollback.result }}"
-            echo "  - restore: $ROLLBACK_RESTORE"
-            echo "  - functional gate: $ROLLBACK_FUNCTIONAL"
-            echo "  - metrics gate: $ROLLBACK_METRICS"
+            echo "- elapsed: $elapsed / 1800s"
+            echo "- capacity: ${{ needs.capacity.result }}"
+            echo "- build: $BUILD_SOURCE (xserver=${{ needs.build_xserver.result }}, mac=${{ needs.build_mac.result }})"
+            echo "- push: $PUSH_SOURCE (github=${{ needs.push_github.result }}, xserver=${{ needs.push_xserver.result }})"
+            echo "- canary: ${{ needs.canary.result }} (lease=$CANARY_LEASE, functional=$CANARY_FUNCTIONAL, metrics=$CANARY_METRICS)"
+            echo "- promote: ${{ needs.promote.result }} (functional=$PROMOTE_FUNCTIONAL, metrics=$PROMOTE_METRICS, tags=$PROMOTE_PROTECT, sla=$PROMOTE_SLA, complete=$PROMOTE_COMPLETE)"
+            echo "- rollback: ${{ needs.rollback.result }} (restore=$ROLLBACK_RESTORE)"
+            echo "- cleanup: ${{ needs.cleanup.result }}"
             echo "- workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           } >> "$GITHUB_STEP_SUMMARY"

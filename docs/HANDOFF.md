@@ -9,7 +9,7 @@
 
 ## 当前接棒状态
 
-- 状态：实现、本机规则同步与 Mac 真实构建完成，待专项复审、Xserver 同 commit 构建、PR/main CI 与自动 Release
+- 状态：专项复审 APPROVE，Mac/Xserver 同 commit 构建与 smoke 完成，待 PR/main CI 与自动 Release
 - 当前写入者：Codex
 - App / 模型：Codex / GPT-5
 - 分支：feat/container-image
@@ -78,10 +78,13 @@
 - 2026-08-10：`install.sh` 已在本机实装受管 DevOps 区块，Claude/Codex/OpenCode/OpenChamber/Cursor/Gemini/Qwen/Windsurf 与 9 个 skills surface 全部指向 Git checkout；二次执行无新备份。
 - 2026-08-10：仓库 CI 新增 main 自动 GitHub Release 与失败回滚，v1.1.1 release/tag 当前均未预占，release notes 可从 CHANGELOG 确定生成。
 - 2026-08-10：main workflow concurrency 改为按 commit SHA 唯一，连续版本不会因 GitHub“同组只保留一个 pending run”的语义跳过中间 CI/Release；PR 仍会取消同分支旧运行。
+- 2026-08-10：专项代码复审关闭全部 HIGH/MEDIUM 后 APPROVE；超时 fixture 证明父 CLI 先退出、子进程忽略 TERM 时仍会在宽限后清完整独立进程组。
+- 2026-08-10：Xserver 以非 root `gha` 从 GitHub clone 并 detached checkout `a3a4761a102b2ca1e1a34d57f3b6aefbcde5013c`，host 网络冷构建耗时 65 秒；health=healthy、UID=10001、`/healthz=ok`、amd64，tar=45,070,848 bytes。
+- 2026-08-10：Mac 从同一 clean commit `a3a4761a102b2ca1e1a34d57f3b6aefbcde5013c` 构建耗时 11 秒；health=healthy、UID=10001、`/healthz=ok`、amd64，tar=18,261,504 bytes。两端测试 tar/容器/镜像已删除，Xserver checkout 与 Dockerfile 保留，223 个 volume 未触碰。
 
 ## 进行中
 
-- 容器构建与规则同步专项复审、Xserver 从 Git 同步同一 commit 后真实构建、PR/main CI 与 v1.1.1 自动 Release。
+- PR/main CI 与 v1.1.1 自动 Release；合并后再次核对 tag/release commit 与 main CI。
 
 ## 已知坑 / 注意事项
 
@@ -97,7 +100,7 @@
 
 ## 下一步
 
-先完成 v1.1.1 发布。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再补齐该应用自己的 OIDC、部署控制器和功能门。
+创建并合并 v1.1.1 PR，等待 main CI 自动发布 Release。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再补齐该应用自己的 OIDC、部署控制器和功能门。
 
 ## 如何验证
 

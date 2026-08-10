@@ -1,0 +1,38 @@
+# image-retention.yml — GHCR 容量守卫；复制 cleanup-ghcr-versions.sh 到 scripts/ 后启用。
+name: Image retention
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only report candidates
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-retention-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Prune superseded GHCR versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -x ./scripts/cleanup-ghcr-versions.sh
+          args=(--owner "$GITHUB_REPOSITORY_OWNER" --package "${GITHUB_REPOSITORY#*/}" --keep-count 30 --min-age-hours 6)
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" || "${{ inputs.dry_run }}" == "false" ]]; then
+            args+=(--apply)
+          fi
+          ./scripts/cleanup-ghcr-versions.sh "${args[@]}"

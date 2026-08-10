@@ -38,10 +38,36 @@ jobs:
             skills/vibedevops/scripts/deploy-handoff.sh \
             skills/vibedevops/scripts/health-check.sh \
             skills/vibedevops/scripts/test-health-check.sh \
-            skills/vibedevops/scripts/test-install.sh
+            skills/vibedevops/scripts/test-build-runner.sh \
+            skills/vibedevops/scripts/test-image-lifecycle.sh \
+            skills/vibedevops/scripts/test-install.sh \
+            skills/vibedevops/scripts/test-reasonix-runtime.sh \
+            skills/vibedevops/templates/build-gate/install-github-runner.sh \
+            skills/vibedevops/templates/reasonix-runtime/health-check.sh \
+            skills/vibedevops/templates/reasonix-runtime/install.sh \
+            skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh \
+            skills/vibedevops/templates/image-lifecycle/cleanup-ghcr-versions.sh \
+            skills/vibedevops/templates/image-lifecycle/install-local-guard.sh
       - name: Test CI/CD scoring
         run: ./skills/vibedevops/scripts/test-health-check.sh
       - name: Test global rule installation
         run: ./skills/vibedevops/scripts/test-install.sh
+      - name: Test self-hosted runner installer guardrails
+        run: ./skills/vibedevops/scripts/test-build-runner.sh
+      - name: Test image lifecycle guardrails
+        run: ./skills/vibedevops/scripts/test-image-lifecycle.sh
+      - name: Download pinned Reasonix v1.21.5
+        run: |
+          mkdir -p /tmp/reasonix-v1.21.5
+          curl -fsSL \
+            https://github.com/esengine/DeepSeek-Reasonix/releases/download/v1.21.5/reasonix-linux-amd64.tar.gz \
+            -o /tmp/reasonix-v1.21.5/reasonix-linux-amd64.tar.gz
+          echo "619123fa87320a7357e24ec0f8d5ab5fc7ecc87dc6c09365036540e94281cae8  /tmp/reasonix-v1.21.5/reasonix-linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/reasonix-v1.21.5/reasonix-linux-amd64.tar.gz -C /tmp/reasonix-v1.21.5
+          /tmp/reasonix-v1.21.5/reasonix --version
+      - name: Test Reasonix runtime installation
+        env:
+          VIBEDEVOPS_REASONIX_REAL_BIN: /tmp/reasonix-v1.21.5/reasonix
+        run: ./skills/vibedevops/scripts/test-reasonix-runtime.sh
       - name: Run repository health check
         run: ./skills/vibedevops/scripts/health-check.sh --json .

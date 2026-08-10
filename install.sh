@@ -38,6 +38,7 @@ fi
 
 # 2. 将所有 Agent 的全局规则入口收敛到 ~/AGENTS.md
 GLOBAL_RULES="$HOME/AGENTS.md"
+MANAGED_DEVOPS_RULES="$REPO_DIR/skills/vibedevops/templates/global-agent-devops.md"
 POINTER_TEXT='> 本机所有 coding agent 的**唯一权威规则源是 `~/AGENTS.md`**，项目地图是 `~/PROJECTS.md`。
 > 进入任何仓库前，先读该仓库的 `AGENTS.md` 与 `docs/HANDOFF.md`，跑一次验证命令确认基线绿；
 > 收工前更新 `docs/HANDOFF.md` 并提交，不留半成品。冲突时一律以 `~/AGENTS.md` 为准。'
@@ -111,6 +112,85 @@ ensure_rule_entry() {
     fi
 }
 
+sync_managed_devops_rules() {
+    local requested_target=$1
+    local target=$1
+    local source=$2
+    local staged="$target.vibedevops-rules.$$"
+    local backup
+    local start_count end_count start_line end_line linked depth
+    [ -f "$source" ] || { echo "❌ 缺少受管 DevOps 规则: $source" >&2; exit 1; }
+    mkdir -p "$(dirname "$requested_target")"
+    depth=0
+    while [ -L "$target" ]; do
+        depth=$((depth + 1))
+        [ "$depth" -le 16 ] || {
+            echo "❌ 全局规则软链层级过深: $requested_target" >&2
+            exit 1
+        }
+        linked="$(readlink "$target")"
+        case "$linked" in
+            /*) target="$linked" ;;
+            *) target="$(dirname "$target")/$linked" ;;
+        esac
+    done
+    staged="$target.vibedevops-rules.$$"
+    mkdir -p "$(dirname "$target")"
+    if { [ -e "$target" ] && [ ! -f "$target" ]; } || { [ ! -e "$target" ] && [ -L "$requested_target" ]; }; then
+        echo "❌ 全局规则源必须是普通文件: $target" >&2
+        exit 1
+    fi
+    if [ -f "$target" ]; then
+        start_count="$(grep -c '^<!-- VIBEDEVOPS:MANAGED-DEVOPS:START -->$' "$target" || true)"
+        end_count="$(grep -c '^<!-- VIBEDEVOPS:MANAGED-DEVOPS:END -->$' "$target" || true)"
+        if { [ "$start_count" != 0 ] || [ "$end_count" != 0 ]; } && \
+           { [ "$start_count" != 1 ] || [ "$end_count" != 1 ]; }; then
+            echo "❌ 全局规则中的 VibeDevOps 受管标记损坏，拒绝改写: $target" >&2
+            exit 1
+        fi
+        if [ "$start_count" = 1 ]; then
+            start_line="$(grep -n '^<!-- VIBEDEVOPS:MANAGED-DEVOPS:START -->$' "$target" | cut -d: -f1)"
+            end_line="$(grep -n '^<!-- VIBEDEVOPS:MANAGED-DEVOPS:END -->$' "$target" | cut -d: -f1)"
+            [ "$start_line" -lt "$end_line" ] || {
+                echo "❌ 全局规则中的 VibeDevOps 受管标记顺序错误，拒绝改写: $target" >&2
+                exit 1
+            }
+        fi
+        awk '
+            /^<!-- VIBEDEVOPS:MANAGED-DEVOPS:START -->$/ { managed=1; next }
+            /^<!-- VIBEDEVOPS:MANAGED-DEVOPS:END -->$/ { managed=0; next }
+            !managed { print }
+        ' "$target" | awk '
+            { lines[NR]=$0 }
+            END {
+                last=NR
+                while (last > 0 && lines[last] == "") last--
+                for (i=1; i<=last; i++) print lines[i]
+            }
+        ' > "$staged"
+    else
+        printf '# AGENTS.md — 全局规则（唯一权威源）\n' > "$staged"
+    fi
+    [ ! -s "$staged" ] || printf '\n' >> "$staged"
+    cat "$source" >> "$staged"
+    printf '\n' >> "$staged"
+    if [ -f "$target" ] && cmp -s "$target" "$staged"; then
+        rm -f "$staged"
+        chmod 600 "$target"
+        echo "   ✅ 全局 DevOps 规则已是最新"
+        return
+    fi
+    if [ -f "$target" ]; then
+        backup="$(backup_name "$target")"
+        cp -p "$target" "$backup"
+        chmod 600 "$backup"
+    fi
+    chmod 600 "$staged"
+    mv "$staged" "$target"
+    echo "   ✅ 全局 DevOps 规则已同步到 ~/AGENTS.md"
+}
+
+sync_managed_devops_rules "$GLOBAL_RULES" "$MANAGED_DEVOPS_RULES"
 if [ -f "$GLOBAL_RULES" ]; then
     ensure_rule_entry "$HOME/CLAUDE.md" "Claude Code" '@AGENTS.md'
     ensure_rule_entry "$HOME/.claude/CLAUDE.md" "Claude Code config" '@../AGENTS.md'

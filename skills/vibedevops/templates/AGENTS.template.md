@@ -33,6 +33,10 @@
 - 禁止把 `workflow_dispatch` 或合并后的人工 approve 设为正常发布必经门；手动触发只用于重试、回滚和事故恢复。
 - 需要等待发布时间窗口时延迟合并，不得先合并再卡住部署。
 - hosted CI 额度不足时切换受监控的 self-hosted runner/外部 CD 控制器，不得退回手工部署。
+- Dockerfile、`.dockerignore`、基础镜像源顺序、digest 与唯一构建入口必须进入 Git；Xserver 与 Mac 只 checkout 同一 commit，禁止机器私有副本或 cache 依赖。
+- 大陆构建节点优先使用 DaoCloud 完整前缀并设置单路径超时；fallback 只能切到解析为同一 digest 的上游镜像。Xserver 构建显式使用 host 网络，生产服务器只拉不可变 digest，绝不现场构建。
+- 生产镜像链固定为 Xserver 构建优先、Mac fallback，GitHub hosted 推送 GHCR 优先、Xserver fallback；main 合并后的构建、推送、部署、功能验证与失败回滚必须在 30 分钟 deadline 内自动完成。
+- current 与 last-known-good digest、production/rollback tag 及其 OCI 引用闭包必须受保护；清理不得 force 删除镜像或自动删除 volume。
 
 ## 验证命令（共同基线）
 

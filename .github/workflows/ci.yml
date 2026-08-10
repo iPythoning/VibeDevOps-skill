@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secrets:
@@ -39,10 +39,12 @@ jobs:
             skills/vibedevops/scripts/health-check.sh \
             skills/vibedevops/scripts/test-health-check.sh \
             skills/vibedevops/scripts/test-build-runner.sh \
+            skills/vibedevops/scripts/test-container-build.sh \
             skills/vibedevops/scripts/test-image-lifecycle.sh \
             skills/vibedevops/scripts/test-install.sh \
             skills/vibedevops/scripts/test-reasonix-runtime.sh \
             skills/vibedevops/templates/build-gate/install-github-runner.sh \
+            skills/vibedevops/templates/build-gate/build-container-image.sh \
             skills/vibedevops/templates/reasonix-runtime/health-check.sh \
             skills/vibedevops/templates/reasonix-runtime/install.sh \
             skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh \
@@ -54,6 +56,8 @@ jobs:
         run: ./skills/vibedevops/scripts/test-install.sh
       - name: Test self-hosted runner installer guardrails
         run: ./skills/vibedevops/scripts/test-build-runner.sh
+      - name: Test container build mirror fallback
+        run: ./skills/vibedevops/scripts/test-container-build.sh
       - name: Test image lifecycle guardrails
         run: ./skills/vibedevops/scripts/test-image-lifecycle.sh
       - name: Download pinned Reasonix v1.21.5
@@ -69,5 +73,113 @@ jobs:
         env:
           VIBEDEVOPS_REASONIX_REAL_BIN: /tmp/reasonix-v1.21.5/reasonix
         run: ./skills/vibedevops/scripts/test-reasonix-runtime.sh
+      - name: Build and smoke-test container image
+        run: |
+          ./skills/vibedevops/templates/build-gate/build-container-image.sh \
+            --tag vibedevops-skill:ci \
+            --timeout-seconds 300 \
+            --route \
+              "public.ecr.aws/docker/library/alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce" \
+              "https://dl-cdn.alpinelinux.org/alpine"
+          container_id="$(docker run --detach --publish 127.0.0.1::8080 vibedevops-skill:ci)"
+          trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 20); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$container_id")"
+            [ "$status" != "healthy" ] || break
+            [ "$status" != "unhealthy" ] || exit 1
+            sleep 1
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy
+          test "$(docker exec "$container_id" id -u)" != 0
       - name: Run repository health check
         run: ./skills/vibedevops/scripts/health-check.sh --json .
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [secrets, validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      created: ${{ steps.publish.outputs.created }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      release_sha: ${{ steps.metadata.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Validate release metadata
+        id: metadata
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="v${version}"
+          grep -q "^## ${tag} — " CHANGELOG.md
+          awk -v header="## ${tag} — " '
+            index($0, header) == 1 { capture=1; next }
+            capture && /^## v/ { exit }
+            capture { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          test -s /tmp/release-notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git log -1 --format=%H -- VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Publish immutable GitHub release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_SHA: ${{ steps.metadata.outputs.release_sha }}
+        run: |
+          echo "created=false" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            actual_sha="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | awk '
+              /\^\{\}$/ { peeled=$1 }
+              !/\^\{\}$/ { direct=$1 }
+              END { print peeled ? peeled : direct }
+            ')"
+            test "$actual_sha" = "$RELEASE_SHA"
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "tag $TAG exists without a GitHub Release; refusing to retarget it" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md
+          echo "created=true" >> "$GITHUB_OUTPUT"
+      - name: Verify release target
+        if: steps.publish.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_SHA: ${{ steps.metadata.outputs.release_sha }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          for attempt in $(seq 1 10); do
+            actual_sha="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | awk '
+              /\^\{\}$/ { peeled=$1 }
+              !/\^\{\}$/ { direct=$1 }
+              END { print peeled ? peeled : direct }
+            ')"
+            [ "$actual_sha" != "$RELEASE_SHA" ] || exit 0
+            sleep 2
+          done
+          echo "release tag $TAG did not resolve to $RELEASE_SHA" >&2
+          exit 1
+
+  rollback_release:
+    if: always() && needs.release.result == 'failure' && needs.release.outputs.created == 'true'
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Roll back failed release publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes

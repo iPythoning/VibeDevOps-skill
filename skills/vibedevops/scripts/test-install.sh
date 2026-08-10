@@ -6,7 +6,12 @@ trap 'echo "installer fixture failed at line $LINENO" >&2' ERR
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 FIXTURE_HOME="$(mktemp -d)"
-trap 'rm -rf "$FIXTURE_HOME"' EXIT
+EMPTY_HOME="$(mktemp -d)"
+BAD_HOME="$(mktemp -d)"
+LINK_HOME="$(mktemp -d)"
+DANGLING_HOME="$(mktemp -d)"
+MENTION_HOME="$(mktemp -d)"
+trap 'rm -rf "$FIXTURE_HOME" "$EMPTY_HOME" "$BAD_HOME" "$LINK_HOME" "$DANGLING_HOME" "$MENTION_HOME"' EXIT
 
 mkdir -p \
     "$FIXTURE_HOME/.claude/skills" \
@@ -58,6 +63,18 @@ grep -qxF '@../AGENTS.md' "$FIXTURE_HOME/.claude/CLAUDE.md"
 grep -q '唯一权威规则源是.*~/AGENTS.md' "$FIXTURE_HOME/.codex/AGENTS.md"
 grep -q '唯一权威规则源是.*~/AGENTS.md' "$FIXTURE_HOME/.gemini/GEMINI.md"
 grep -q '唯一权威规则源是.*~/AGENTS.md' "$FIXTURE_HOME/.qwen/QWEN.md"
+grep -q 'VIBEDEVOPS:MANAGED-DEVOPS:START' "$FIXTURE_HOME/AGENTS.md"
+grep -q 'Xserver 构建优先、Mac fallback' "$FIXTURE_HOME/AGENTS.md"
+[ "$(grep -c 'VIBEDEVOPS:MANAGED-DEVOPS:START' "$FIXTURE_HOME/AGENTS.md")" = 1 ]
+[ "$(grep -c 'VIBEDEVOPS:MANAGED-DEVOPS:END' "$FIXTURE_HOME/AGENTS.md")" = 1 ]
+GLOBAL_BACKUPS="$(find "$FIXTURE_HOME" -maxdepth 1 -type f -name 'AGENTS.md.*.bak' | wc -l | tr -d ' ')"
+[ "$GLOBAL_BACKUPS" = 1 ]
+if [ "$(uname -s)" = "Darwin" ]; then
+    GLOBAL_MODE="$(stat -f '%Lp' "$FIXTURE_HOME/AGENTS.md")"
+else
+    GLOBAL_MODE="$(stat -c '%a' "$FIXTURE_HOME/AGENTS.md")"
+fi
+[ "$GLOBAL_MODE" = 600 ]
 grep -q '# Claude-specific notes' "$FIXTURE_HOME/.claude/CLAUDE.md"
 [ "$(grep -cxF '@../AGENTS.md' "$FIXTURE_HOME/.claude/CLAUDE.md")" = 1 ]
 [ -L "$FIXTURE_HOME/.claude/CLAUDE.md" ]
@@ -75,5 +92,66 @@ DANGLING_BACKUP="$(find "$FIXTURE_HOME/.gemini" -maxdepth 1 -type l -name 'GEMIN
 BACKUP="$(find "$FIXTURE_HOME/.codex/skills" -maxdepth 1 -type d -name 'vibedevops.*.bak' -print -quit)"
 [ -n "$BACKUP" ] && grep -qxF 'preserve me' "$BACKUP/local.txt"
 [ "$(find "$FIXTURE_HOME/.codex/skills" -maxdepth 1 -type d -name 'vibedevops.*.bak' | wc -l | tr -d ' ')" = 1 ]
+
+HOME="$EMPTY_HOME" \
+VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null
+HOME="$EMPTY_HOME" \
+VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null
+[ -f "$EMPTY_HOME/AGENTS.md" ]
+grep -q 'VIBEDEVOPS:MANAGED-DEVOPS:START' "$EMPTY_HOME/AGENTS.md"
+grep -q 'Git 仓库是构建与交接的唯一事实源' "$EMPTY_HOME/AGENTS.md"
+[ "$(find "$EMPTY_HOME" -maxdepth 1 -type f -name 'AGENTS.md.*.bak' | wc -l | tr -d ' ')" = 0 ]
+
+printf '%s\n' \
+    '# preserve malformed rules' \
+    '<!-- VIBEDEVOPS:MANAGED-DEVOPS:START -->' \
+    'must survive' > "$BAD_HOME/AGENTS.md"
+cp "$BAD_HOME/AGENTS.md" "$BAD_HOME/AGENTS.before"
+if HOME="$BAD_HOME" \
+    VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+    VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null 2>&1; then
+    echo "malformed managed markers must be rejected" >&2
+    exit 1
+fi
+cmp -s "$BAD_HOME/AGENTS.before" "$BAD_HOME/AGENTS.md"
+
+mkdir -p "$LINK_HOME/dotfiles"
+printf '# linked global rules\n' > "$LINK_HOME/dotfiles/AGENTS.shared.md"
+ln -s dotfiles/AGENTS.shared.md "$LINK_HOME/AGENTS.md"
+HOME="$LINK_HOME" \
+VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null
+[ -L "$LINK_HOME/AGENTS.md" ]
+grep -q 'VIBEDEVOPS:MANAGED-DEVOPS:START' "$LINK_HOME/dotfiles/AGENTS.shared.md"
+[ "$(find "$LINK_HOME/dotfiles" -maxdepth 1 -type f -name 'AGENTS.shared.md.*.bak' | wc -l | tr -d ' ')" = 1 ]
+
+ln -s missing/AGENTS.md "$DANGLING_HOME/AGENTS.md"
+if HOME="$DANGLING_HOME" \
+    VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+    VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null 2>&1; then
+    echo "dangling global rules symlink must be rejected" >&2
+    exit 1
+fi
+[ -L "$DANGLING_HOME/AGENTS.md" ]
+
+printf '%s\n' \
+    '# marker mentions are ordinary user rules' \
+    'explain <!-- VIBEDEVOPS:MANAGED-DEVOPS:START --> without managing' \
+    'KEEP_BETWEEN_MENTIONS' \
+    'explain <!-- VIBEDEVOPS:MANAGED-DEVOPS:END --> without managing' \
+    > "$MENTION_HOME/AGENTS.md"
+HOME="$MENTION_HOME" \
+VIBEDEVOPS_REPO_DIR="$REPO_DIR" \
+VIBEDEVOPS_SKIP_REPO_UPDATE=1 \
+    "$REPO_DIR/install.sh" >/dev/null
+grep -q 'KEEP_BETWEEN_MENTIONS' "$MENTION_HOME/AGENTS.md"
+grep -q '^explain <!-- VIBEDEVOPS:MANAGED-DEVOPS:START --> without managing$' "$MENTION_HOME/AGENTS.md"
 
 echo "installer global-rules fixtures passed"

@@ -5,15 +5,15 @@
 
 ## 当前目标
 
-发布 VibeDevOps v1.1.0：在既有多模型路由、全局规则同步和自动 CI/CD 基础上，新增可复用的原生 Reasonix 常驻服务、OpenCode Go Provider 安全配置，以及本机/部署机/GHCR 三层镜像生命周期防护。
+发布 VibeDevOps v1.1.1：把 Dockerfile、镜像源 fallback、digest 与构建入口完全仓库化；Xserver 与 Mac 从同一 commit 构建，不依赖任何机器私有文件或 cache。
 
 ## 当前接棒状态
 
-- 状态：v1.1.0 已发布，PR 与 main CI 全绿
+- 状态：实现、本机规则同步与 Mac 真实构建完成，待专项复审、Xserver 同 commit 构建、PR/main CI 与自动 Release
 - 当前写入者：Codex
 - App / 模型：Codex / GPT-5
-- 分支：main
-- HEAD：Release `v1.1.0` 指向 `dff0994efe7968ab0e1ca8c71cb82137031e86f8`
+- 分支：feat/container-image
+- HEAD：本次提交见 `git log -1 --oneline`
 - 工作树：应为干净；接棒时以 `git status --short` 为准
 - 下一棒：按具体项目任务选择，不默认启用全部模型
 
@@ -42,6 +42,9 @@
 - 原生 Reasonix 模板在 macOS/Linux 上幂等生成服务，强制 loopback，安全存储 Provider Key，并通过隔离 fixture 与真实 Reasonix `doctor` 解析验证。
 - 镜像生命周期 fixture 证明容器引用、最新版本、生产/回滚 tag 与 current/LKG 不会被删；本机定时守卫和 GHCR retention 均默认保守且可审计。
 - 生产镜像链路固定为 Xserver 构建优先、Mac fallback，GitHub hosted push GHCR 优先、Xserver fallback；只向 online/idle 专用 runner 派单，并在 workflow 创建后 1800 秒内完成云端推广，否则回滚。
+- Dockerfile、`.dockerignore`、基础镜像源顺序、digest 与构建入口全部进入 Git；大陆节点先走 DaoCloud，150 秒失败切 Public ECR，两条路径解析到同一 digest。
+- 本机不存在 `~/AGENTS.md` 时，安装器也能从 GitHub 仓库创建权威规则源；已有规则只替换受管 DevOps 区块并保留 0600 备份，所有 Agent 入口收敛到同一文件。
+- main CI 全绿后自动发布 `VERSION` 对应 GitHub Release；仅当本次新建 Release 后验证失败才自动删除该 Release/tag。
 
 ## 已完成
 
@@ -69,10 +72,15 @@
 - 2026-08-10：runner listener 统一以 `env -i` 最小环境启动，验证未继承 API key/secret 类变量；清除了 Xserver 首次 root 误装留下的 666 MiB 未注册 runner 目录。
 - 2026-08-10：PR #3 首轮 CI 发现 Linux hosted fixture 缺少 macOS `plutil`；安装器改为显式校验/可注入该工具，fixture 用 Python `plistlib` 做跨平台真实 plist 解析，本地回归已通过。
 - 2026-08-10：PR #3 复跑全绿并 squash 合并，main CI `31356872316` 通过；GitHub Release `v1.1.0` 已发布。
+- 2026-08-10：新增仓库级非 root Dockerfile、统一构建入口与 CI 容器 smoke；Mac 使用 DaoCloud 冷构建 `linux/amd64` 成功，镜像约 18.2 MB，含 `/healthz`，总耗时 101 秒。
+- 2026-08-10：官方资料与实测确认 DaoCloud 完整前缀、DaoCloud Docker 前缀替换和 Public ECR 的 Alpine 3.22 OCI index digest 均为 `sha256:14358309…95dce`；公共 GitHub 模板不采用账号专属阿里云 mirror URL。
+- 2026-08-10：Alpine 官方 CDN 在本机冷构建 300 秒超时，切到 Alpine 官方镜像列表收录的阿里云公共包源后，29 个固定版本包安装耗时 8.1 秒；镜像 health=healthy、UID=10001、`/healthz=ok`、amd64、18,241,191 bytes。
+- 2026-08-10：`install.sh` 已在本机实装受管 DevOps 区块，Claude/Codex/OpenCode/OpenChamber/Cursor/Gemini/Qwen/Windsurf 与 9 个 skills surface 全部指向 Git checkout；二次执行无新备份。
+- 2026-08-10：仓库 CI 新增 main 自动 GitHub Release 与失败回滚，v1.1.1 release/tag 当前均未预占，release notes 可从 CHANGELOG 确定生成。
 
 ## 进行中
 
-- （无）
+- 容器构建与规则同步专项复审、Xserver 从 Git 同步同一 commit 后真实构建、PR/main CI 与 v1.1.1 自动 Release。
 
 ## 已知坑 / 注意事项
 
@@ -88,22 +96,24 @@
 
 ## 下一步
 
-由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再按 `references/ci-cd-best-practices.md` 补齐 OIDC、last-known-good/回滚租约、功能门、指标门和告警脚本；不能把当前 skill 仓库的 repository runner 误当成全账号共享资源。
+先完成 v1.1.1 发布。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再补齐该应用自己的 OIDC、部署控制器和功能门。
 
 ## 如何验证
 
-2026-08-10 收尾验证已通过：build runner、image lifecycle、CI/CD health、全局安装器 fixtures，仓库 health check，Actionlint，skill quick validate，Gitleaks（工作树与 Git 历史）和 `git diff --check`。Reasonix 真实二进制兼容性由仓库 CI 固定 v1.21.5 + SHA256 验证。
+2026-08-10 当前验证已通过：build runner、container fallback/超时强杀、image lifecycle、CI/CD health、全局安装器新旧 HOME fixtures，Mac 真实 DaoCloud/阿里云镜像构建与非 root smoke，Actionlint v1.7.7、skill quick validate、Gitleaks 和 `git diff --check`。Reasonix 本机验证按用户要求不重复执行；仓库 CI 继续固定 v1.21.5 + SHA256 验证。
 
 - `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-install.sh`
 - `./skills/vibedevops/scripts/test-health-check.sh`
 - `./skills/vibedevops/scripts/test-build-runner.sh`
+- `./skills/vibedevops/scripts/test-container-build.sh`
 - `./skills/vibedevops/scripts/test-install.sh`
 - `./skills/vibedevops/scripts/test-reasonix-runtime.sh`
 - `./skills/vibedevops/scripts/test-image-lifecycle.sh`
 - `bash -n skills/vibedevops/templates/build-gate/install-github-runner.sh`
+- `./skills/vibedevops/templates/build-gate/build-container-image.sh --tag vibedevops-skill:local`
 - `actionlint skills/vibedevops/templates/ci/pr-check.yml skills/vibedevops/templates/ci/deploy.yml`
 - `actionlint skills/vibedevops/templates/ci/image-retention.yml .github/workflows/ci.yml`
-- `actionlint .github/workflows/ci.yml`
+- `GOTOOLCHAIN=local go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/ci.yml skills/vibedevops/templates/ci/deploy.yml`
 - `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/vibedevops`
 - `git diff --check`
 - `./skills/vibedevops/scripts/health-check.sh --json .`

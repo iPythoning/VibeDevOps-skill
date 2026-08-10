@@ -213,6 +213,22 @@ macOS 使用 `launchd` KeepAlive，Linux 使用 `systemd --user` Restart 并由�
 
 需要本机每天治理个人账号下全部 GHCR packages 时，先通过 GitHub 明确授予 `delete:packages`，再运行 `./install.sh --with-ghcr-retention`；普通 Docker 守卫不会隐式扩大 token 权限。
 
+### Docker 镜像
+
+仓库根目录的 `Dockerfile` 是本机、Xserver 和 CI 的唯一镜像定义。Mac fallback 显式构建生产架构，Xserver 从同一 Git commit 原生构建：
+
+```bash
+# Mac fallback 与 Xserver 使用同一入口
+./skills/vibedevops/templates/build-gate/build-container-image.sh \
+  --tag vibedevops-skill:local
+```
+
+镜像以非 root 用户运行，默认在 `8080` 提供 `/healthz`，并包含完整 skill、安装器和体检脚本。构建入口优先使用 DaoCloud 大陆基础镜像与 Alpine 官方列表收录的阿里云公共包镜像，150 秒失败后同时切换 Public ECR 与 Alpine 官方 CDN；两条基础镜像路径固定同一 `sha256`。禁止在两台机器分别维护 Dockerfile，所有生产构建必须来自 Git checkout，本机 cache 只能提速、不能成为正确性依赖。
+
+`install.sh` 还会把仓库内的 `skills/vibedevops/templates/global-agent-devops.md` 受管区块幂等同步到 `~/AGENTS.md`，再让 Claude、Codex、OpenCode/OpenChamber、Cursor、Gemini、Qwen 与 Windsurf 共用这一个入口。规则来自 GitHub checkout，新机器不需要预先手写本机规则。
+
+本仓库自身也遵循同一条链：PR 门禁通过并合并 `main` 后，CI 自动从 `VERSION` 与 `CHANGELOG.md` 发布对应 GitHub Release；发布验证失败时仅回滚本次新建的 Release/tag，不触碰既有版本。
+
 ---
 
 ## 仓库结构
@@ -240,6 +256,7 @@ macOS 使用 `launchd` KeepAlive，Linux 使用 `systemd --user` Restart 并由�
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
 ├── .github/workflows/ci.yml # 仓库自身 PR/main 机械门禁
+├── Dockerfile / .dockerignore # 本机、Xserver、CI 同源容器构建
 ├── install.sh
 └── README.md / README.en.md
 ```

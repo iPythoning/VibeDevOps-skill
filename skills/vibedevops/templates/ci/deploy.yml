@@ -132,15 +132,11 @@ jobs:
         with:
           keep-state: true
       - name: Build immutable linux/amd64 image on Xserver
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
-          outputs: type=docker,dest=${{ runner.temp }}/image.tar
-          provenance: false
-          sbom: false
+        run: |
+          ./scripts/build-container-image.sh \
+            --tag "${{ steps.image.outputs.name }}:${{ github.sha }}" \
+            --network host \
+            --output-tar "${{ runner.temp }}/image.tar"
       - name: Enforce portable artifact size budget
         run: |
           size_kib="$(du -k "${{ runner.temp }}/image.tar" | awk '{print $1}')"
@@ -173,15 +169,10 @@ jobs:
         with:
           keep-state: true
       - name: Build immutable linux/amd64 image on Mac fallback
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
-          outputs: type=docker,dest=${{ runner.temp }}/image.tar
-          provenance: false
-          sbom: false
+        run: |
+          ./scripts/build-container-image.sh \
+            --tag "${{ steps.image.outputs.name }}:${{ github.sha }}" \
+            --output-tar "${{ runner.temp }}/image.tar"
       - name: Enforce portable artifact size budget
         run: |
           size_kib="$(du -k "${{ runner.temp }}/image.tar" | awk '{print $1}')"

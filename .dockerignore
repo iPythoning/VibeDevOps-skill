@@ -1,0 +1,7 @@
+.git
+.gstack
+.env
+.env.*
+!.env.example
+*.bak
+.DS_Store

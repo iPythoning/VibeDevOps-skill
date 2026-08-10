@@ -17,7 +17,7 @@
 
 ## 验证命令（共同基线）
 
-- 测试 / 检查：`bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-build-runner.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-image-lifecycle.sh skills/vibedevops/scripts/test-install.sh skills/vibedevops/scripts/test-reasonix-runtime.sh skills/vibedevops/templates/build-gate/install-github-runner.sh skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh skills/vibedevops/templates/image-lifecycle/cleanup-ghcr-versions.sh skills/vibedevops/templates/image-lifecycle/install-local-guard.sh skills/vibedevops/templates/reasonix-runtime/install.sh skills/vibedevops/templates/reasonix-runtime/health-check.sh && ./skills/vibedevops/scripts/test-build-runner.sh && ./skills/vibedevops/scripts/test-health-check.sh && ./skills/vibedevops/scripts/test-image-lifecycle.sh && ./skills/vibedevops/scripts/test-install.sh && ./skills/vibedevops/scripts/test-reasonix-runtime.sh && ./skills/vibedevops/scripts/health-check.sh --json . >/dev/null`
+- 测试 / 检查：`bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-build-runner.sh skills/vibedevops/scripts/test-container-build.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-image-lifecycle.sh skills/vibedevops/scripts/test-install.sh skills/vibedevops/scripts/test-reasonix-runtime.sh skills/vibedevops/templates/build-gate/build-container-image.sh skills/vibedevops/templates/build-gate/install-github-runner.sh skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh skills/vibedevops/templates/image-lifecycle/cleanup-ghcr-versions.sh skills/vibedevops/templates/image-lifecycle/install-local-guard.sh skills/vibedevops/templates/reasonix-runtime/install.sh skills/vibedevops/templates/reasonix-runtime/health-check.sh && ./skills/vibedevops/scripts/test-build-runner.sh && ./skills/vibedevops/scripts/test-container-build.sh && ./skills/vibedevops/scripts/test-health-check.sh && ./skills/vibedevops/scripts/test-image-lifecycle.sh && ./skills/vibedevops/scripts/test-install.sh && ./skills/vibedevops/scripts/test-reasonix-runtime.sh && ./skills/vibedevops/scripts/health-check.sh --json . >/dev/null`
 
 如命令变更，必须同步更新本节——这是所有 agent 的共同基线。
 
@@ -38,6 +38,8 @@
 - 禁止把 `workflow_dispatch` 或合并后的人工 approve 设为正常发布必经门；手动触发仅用于重试、回滚和事故恢复。
 - 需要等待发布时间窗口时延迟合并，不得先合并再卡住部署。
 - hosted CI 额度不足时切换受监控的 self-hosted runner/外部 CD 控制器，不得退回手工部署。
+- Dockerfile、`.dockerignore`、基础镜像源顺序、digest 与构建入口必须全部进入 Git；Xserver 与 Mac 只能 checkout 同一 commit，禁止各自维护副本或依赖本机 cache 才能构建。大陆节点使用 DaoCloud 前缀优先、上游 fallback，所有路径必须固定并验证同一 digest。
+- 本机全局 DevOps 规则由仓库内 `skills/vibedevops/templates/global-agent-devops.md` 的受管区块幂等同步；不得把只存在于某台机器 `~/AGENTS.md` 的内容当作已发布规则。
 - 每次成功部署后清理部署机旧镜像/build cache，current 与 last-known-good digest 必须保护；禁止 `docker image rm --force`、禁止自动删 volume。`docker builder prune --force` 只允许用于关闭交互确认，且必须带过期过滤器并只清未使用 cache。
 - GHCR 必须有每日 retention：保护生产/回滚 tag，至少保留最新 30 个 package versions，并给新构建至少 6 小时安全窗；清理失败告警但不回滚健康版本。
 

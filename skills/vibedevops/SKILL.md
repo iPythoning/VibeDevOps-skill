@@ -136,7 +136,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **三级路由门禁**：CLOUD（CI）→ BUILDER（专用构建机）→ LOCAL（本机兜底），自动降级，三条路跑同一条命令、写同一份 `docs/BUILD-EVIDENCE.md`，区别只在证据强度标注。**CI 额度查不到时按不足处理——"以为 CI 在跑其实没跑"是最危险的静默失败。**
 - **构建时限铁律**：任何门禁 `GATE_TIMEOUT`（默认 600s）机械强制，超时强杀、证据记耗时。超时 = 修构建（缓存/依赖/拆分），不许调大上限。
 - **补验欠账（去 cron 化）**：LOCAL 兜底通过 ≠ 结案，只是欠账。记录进队列，销账内嵌在 build-gate 启动路径——之后任何一次构建自动补验（构建越勤销得越快，不依赖 cron 也不怕机器睡眠）；**欠账未销的 commit 禁止发布**。
-- **镜像走私有 registry + 依赖源运行时注入**：构建机不依赖公共镜像加速器——builder 镜像在网络通畅的机器 build/push（如 GHCR），构建机只 pull（公共 Docker Hub 在部分网络下完全不可达）；npm/pip 源用环境变量运行时注入 + 命名缓存卷（脚本内置），通用官方镜像即插即用，免重烤。
+- **镜像定义进 Git + 有界镜像源 fallback**：Dockerfile、`.dockerignore`、镜像源顺序、digest 与构建入口必须随仓库版本化，Xserver/Mac 只 checkout 同一 commit；大陆节点先走 DaoCloud 完整前缀，单路径超时后切上游同 digest。builder 镜像优先预烤到 GHCR；npm/pip 源运行时注入并复用命名缓存卷。本机 cache 只能提速，不能成为构建成功的前提。
 - **构建机 docker 一律 `--network host`**：NAS/品牌小主机的 docker 常由厂商托管，docker0 默认桥不存在是常态——显式 host 网络让桥状态与构建无关，也绝不重启这类机器的 docker daemon。
 - **代理规避 + 双路径 ssh**：构建机配 overlay 网络（Tailscale 类）为主、局域网 IP 兜底的双 alias（CGNAT `100.64/10` 段必须走虚拟网卡，绝不绑物理网卡；局域网路径反之）；脚本里禁止裸域名和 `root@IP`；靠绕，不靠改代理工具配置。
 

@@ -161,6 +161,22 @@ The production template uses a fixed failover order: build on the LAN Xserver fi
 
 After explicitly granting `delete:packages`, run `./install.sh --with-ghcr-retention` for daily account-wide GHCR cleanup. The ordinary Docker guard never expands token scopes implicitly.
 
+### Container image
+
+The root `Dockerfile` is the single image definition used by the Mac, Xserver, and CI. Build the production architecture explicitly on the Mac fallback and build the same Git commit natively on Xserver:
+
+```bash
+# The Mac fallback and Xserver use the same entrypoint
+./skills/vibedevops/templates/build-gate/build-container-image.sh \
+  --tag vibedevops-skill:local
+```
+
+The image runs as a non-root user, serves `/healthz` on port `8080`, and includes the complete skill, installer, and health-check scripts. The build entrypoint first uses DaoCloud for the base image and the Alibaba Cloud mirror listed by Alpine for packages, then switches both to Public ECR and Alpine's official CDN after 150 seconds; both base-image paths pin the same `sha256`. Do not maintain separate Dockerfiles per machine. Every production build must come from a Git checkout, and local cache may improve speed but must never be required for correctness.
+
+`install.sh` also converges the managed block from `skills/vibedevops/templates/global-agent-devops.md` into `~/AGENTS.md`, then points Claude, Codex, OpenCode/OpenChamber, Cursor, Gemini, Qwen, and Windsurf at that single source. The policy comes from the GitHub checkout; a fresh machine does not need a hand-written local policy first.
+
+This repository follows the same rule itself: after PR gates pass and the change lands on `main`, CI automatically publishes the GitHub Release described by `VERSION` and `CHANGELOG.md`. If verification fails, it rolls back only the Release/tag created by that run and leaves existing versions untouched.
+
 Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into your agent's skills directory (`~/.claude/skills/`, `~/.agents/skills/`, Kimi Work's daimon skills dir, etc.).
 
 ---
@@ -190,6 +206,7 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
 ├── .github/workflows/ci.yml # Repository PR/main quality gate
+├── Dockerfile / .dockerignore # One container source for Mac, Xserver, and CI
 ├── install.sh
 └── README.md / README.en.md
 ```

@@ -78,6 +78,12 @@ grep -q 'cleanup-images --retry-pending' "$DEPLOY_WORKFLOW"
 grep -q 'image-capacity-check --max-disk-percent 85 --max-cleanup-debt 0' "$DEPLOY_WORKFLOW"
 grep -q '^  build_xserver:' "$DEPLOY_WORKFLOW"
 grep -q '^  build_mac:' "$DEPLOY_WORKFLOW"
+test "$(grep -c './scripts/build-container-image.sh' "$DEPLOY_WORKFLOW")" = 2
+awk '/^  build_xserver:/,/^  build_mac:/' "$DEPLOY_WORKFLOW" | grep -q -- '--network host'
+if awk '/^  build_mac:/,/^  build_select:/' "$DEPLOY_WORKFLOW" | grep -q -- '--network host'; then
+    echo "Mac fallback must not require host build networking" >&2
+    exit 1
+fi
 grep -q '^  push_github:' "$DEPLOY_WORKFLOW"
 grep -q '^  push_xserver:' "$DEPLOY_WORKFLOW"
 grep -q 'VIBEDEVOPS_RUNNER_READ_TOKEN' "$DEPLOY_WORKFLOW"

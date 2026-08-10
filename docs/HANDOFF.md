@@ -67,6 +67,7 @@
 - 2026-08-10：OCI 保护闭包增加 `subject.digest` 反向 referrer，production/rollback 对应的 provenance 与 SBOM 不会因 retention 丢失；runner `.runner` 仓库 URL 改为 jq 精确比较并覆盖前缀碰撞负例。
 - 2026-08-10：当前 `iPythoning/VibeDevOps-skill` 已注册并常驻 `xserver-vibedevops`（Linux/X64/xserver）与 `mac-vibedevops`（macOS/ARM64/mac-builder），两者 GitHub 状态均为 online/idle；Xserver 使用非 root `gha` 用户与 lingering，Mac launchd 会拉起 Docker Desktop。
 - 2026-08-10：runner listener 统一以 `env -i` 最小环境启动，验证未继承 API key/secret 类变量；清除了 Xserver 首次 root 误装留下的 666 MiB 未注册 runner 目录。
+- 2026-08-10：PR #3 首轮 CI 发现 Linux hosted fixture 缺少 macOS `plutil`；安装器改为显式校验/可注入该工具，fixture 用 Python `plistlib` 做跨平台真实 plist 解析，本地回归已通过。
 
 ## 进行中
 

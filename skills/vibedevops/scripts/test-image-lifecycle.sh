@@ -127,11 +127,23 @@ cat > "$FIXTURE/guard-tools/launchctl" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-chmod +x "$FIXTURE/guard-tools/launchctl"
+cat > "$FIXTURE/guard-tools/plutil" <<'EOF'
+#!/bin/sh
+[ "$1" = "-lint" ] || exit 2
+python3 - "$2" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    plistlib.load(handle)
+PY
+EOF
+chmod +x "$FIXTURE/guard-tools/launchctl" "$FIXTURE/guard-tools/plutil"
 HOME="$FIXTURE/guard-home" PATH="$FIXTURE/guard-tools:$PATH" VIBEDEVOPS_IMAGE_GUARD_OS=Darwin \
+    VIBEDEVOPS_PLUTIL_BIN="$FIXTURE/guard-tools/plutil" \
     "$INSTALL_GUARD" --retention-hours 24 --keep-per-repository 2 >/dev/null
 GUARD_PLIST="$FIXTURE/guard-home/Library/LaunchAgents/dev.vibedevops.image-cleanup.plist"
-plutil -lint "$GUARD_PLIST" >/dev/null
+"$FIXTURE/guard-tools/plutil" -lint "$GUARD_PLIST" >/dev/null
 grep -q '<string>24</string>' "$GUARD_PLIST"
 grep -q '<string>2</string>' "$GUARD_PLIST"
 grep -q '<key>EnvironmentVariables</key>' "$GUARD_PLIST"

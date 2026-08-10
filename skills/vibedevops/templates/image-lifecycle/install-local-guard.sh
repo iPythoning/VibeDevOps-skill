@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE="$SCRIPT_DIR/cleanup-docker-images.sh"
 GHCR_SOURCE="$SCRIPT_DIR/cleanup-ghcr-versions.sh"
 OS_NAME="${VIBEDEVOPS_IMAGE_GUARD_OS:-$(uname -s)}"
+PLUTIL_BIN="${VIBEDEVOPS_PLUTIL_BIN:-plutil}"
 TARGET_DIR="$HOME/.local/lib/vibedevops"
 TARGET="$TARGET_DIR/cleanup-docker-images.sh"
 LOG_DIR="$HOME/.local/state/vibedevops"
@@ -46,6 +47,7 @@ xml_escape() {
 }
 
 if [ "$OS_NAME" = "Darwin" ]; then
+    command -v "$PLUTIL_BIN" >/dev/null 2>&1 || { echo "❌ macOS 安装需要 plutil" >&2; exit 1; }
     LABEL="dev.vibedevops.image-cleanup"
     SERVICE="$HOME/Library/LaunchAgents/$LABEL.plist"
     mkdir -p "$(dirname "$SERVICE")"
@@ -69,7 +71,7 @@ if [ "$OS_NAME" = "Darwin" ]; then
 </dict>
 </plist>
 EOF
-    plutil -lint "$SERVICE.new.$$" >/dev/null
+    "$PLUTIL_BIN" -lint "$SERVICE.new.$$" >/dev/null
     mv "$SERVICE.new.$$" "$SERVICE"
     chmod 600 "$SERVICE"
     launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
@@ -139,7 +141,7 @@ if [ "$WITH_GHCR" = "1" ]; then
 </dict>
 </plist>
 EOF
-        plutil -lint "$GHCR_SERVICE.new.$$" >/dev/null
+        "$PLUTIL_BIN" -lint "$GHCR_SERVICE.new.$$" >/dev/null
         mv "$GHCR_SERVICE.new.$$" "$GHCR_SERVICE"
         chmod 600 "$GHCR_SERVICE"
         launchctl bootout "gui/$(id -u)/$GHCR_LABEL" >/dev/null 2>&1 || true

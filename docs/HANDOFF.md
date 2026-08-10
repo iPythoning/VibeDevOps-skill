@@ -9,11 +9,11 @@
 
 ## 当前接棒状态
 
-- 状态：实现与专项复审完成，待 PR、main CI 与 Release
+- 状态：v1.1.0 已发布，PR 与 main CI 全绿
 - 当前写入者：Codex
 - App / 模型：Codex / GPT-5
-- 分支：feat/reasonix-runtime
-- HEAD：本次交接提交见 `git log -1 --oneline`
+- 分支：main
+- HEAD：Release `v1.1.0` 指向 `dff0994efe7968ab0e1ca8c71cb82137031e86f8`
 - 工作树：应为干净；接棒时以 `git status --short` 为准
 - 下一棒：按具体项目任务选择，不默认启用全部模型
 
@@ -68,10 +68,11 @@
 - 2026-08-10：当前 `iPythoning/VibeDevOps-skill` 已注册并常驻 `xserver-vibedevops`（Linux/X64/xserver）与 `mac-vibedevops`（macOS/ARM64/mac-builder），两者 GitHub 状态均为 online/idle；Xserver 使用非 root `gha` 用户与 lingering，Mac launchd 会拉起 Docker Desktop。
 - 2026-08-10：runner listener 统一以 `env -i` 最小环境启动，验证未继承 API key/secret 类变量；清除了 Xserver 首次 root 误装留下的 666 MiB 未注册 runner 目录。
 - 2026-08-10：PR #3 首轮 CI 发现 Linux hosted fixture 缺少 macOS `plutil`；安装器改为显式校验/可注入该工具，fixture 用 Python `plistlib` 做跨平台真实 plist 解析，本地回归已通过。
+- 2026-08-10：PR #3 复跑全绿并 squash 合并，main CI `31356872316` 通过；GitHub Release `v1.1.0` 已发布。
 
 ## 进行中
 
-- v1.1.0 PR、main CI 与 Release 发布；镜像/CD 专项复审结论为 `APPROVE`。
+- （无）
 
 ## 已知坑 / 注意事项
 
@@ -87,7 +88,7 @@
 
 ## 下一步
 
-完成专项复审并发布 v1.1.0。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再按 `references/ci-cd-best-practices.md` 补齐 OIDC、last-known-good/回滚租约、功能门、指标门和告警脚本；不能把当前 skill 仓库的 repository runner 误当成全账号共享资源。
+由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再按 `references/ci-cd-best-practices.md` 补齐 OIDC、last-known-good/回滚租约、功能门、指标门和告警脚本；不能把当前 skill 仓库的 repository runner 误当成全账号共享资源。
 
 ## 如何验证
 

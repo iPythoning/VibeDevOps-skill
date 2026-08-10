@@ -141,6 +141,26 @@ cd VibeDevOps-skill && ./install.sh
 
 The installer converges Claude, Codex, OpenCode/OpenChamber, Cursor, Gemini, Qwen, and Windsurf on `~/AGENTS.md` as the single machine-wide authority, then symlinks `skills/vibedevops` and `skills/flow` into every detected agent. Existing vendor configuration is preserved and backed up before the first pointer/import is added.
 
+To install the native Reasonix runtime as well:
+
+```bash
+./install.sh --with-reasonix-runtime
+```
+
+This idempotently configures the official OpenCode Go provider, stores the API key and credential backups with mode `0600`, sets the supported 85% compaction threshold, and installs a loopback-only `launchd`/`systemd --user` service with `/healthz` verification. On Linux this explicit option authorizes the installer to enable user lingering for post-logout persistence. See the [Reasonix runtime template](skills/vibedevops/templates/reasonix-runtime/README.md).
+
+To install the daily local image-capacity guard:
+
+```bash
+./install.sh --with-image-lifecycle
+```
+
+It removes Docker images and build cache older than seven days only when no container references them and they are outside the newest five images per repository. It never uses `docker image rm --force` or deletes volumes. `docker builder prune --force` only suppresses the prompt and remains limited to unused cache older than the retention window. The production templates retry cleanup debt and enforce a capacity gate before building, protect current/LKG plus `production`/`rollback` tags after deployment, and enforce daily GHCR retention with 30 newest versions and a six-hour indexing window. See the [image lifecycle template](skills/vibedevops/templates/image-lifecycle/README.md).
+
+The production template uses a fixed failover order: build on the LAN Xserver first and fall back to Mac; transfer the same `linux/amd64` artifact to a GitHub-hosted runner for the primary GHCR push and fall back to Xserver for that push; deploy to cloud only by digest. Configure the read-only `VIBEDEVOPS_RUNNER_READ_TOKEN` and dedicated `xserver` / `mac-builder` runner labels so offline runners are rejected instead of queued indefinitely. The workflow creation timestamp starts a hard 1,800-second deadline; an overdue release never disarms the rollback lease.
+
+After explicitly granting `delete:packages`, run `./install.sh --with-ghcr-retention` for daily account-wide GHCR cleanup. The ordinary Docker guard never expands token scopes implicitly.
+
 Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into your agent's skills directory (`~/.claude/skills/`, `~/.agents/skills/`, Kimi Work's daimon skills dir, etc.).
 
 ---
@@ -155,6 +175,8 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   │   │   ├── security/    # Secrets: SECRETS.md, pre-commit (gitleaks-first), sops.yaml, env.example
 │   │   │   ├── ci/          # pr-check.yml / deploy.yml (GitHub Actions skeletons)
 │   │   │   ├── build-gate/  # Three-tier build routing + 10-min hard limit + debt reverification
+│   │   │   ├── reasonix-runtime/ # Native Reasonix provider + launchd/systemd service
+│   │   │   ├── image-lifecycle/ # Local/deployment Docker + GHCR retention
 │   │   │   ├── production-checklist.md  # Monitoring four-piece + reproducibility
 │   │   │   └── renovate.json            # Dependency update baseline
 │   │   ├── references/     # Model routing and CI/CD best practices
@@ -162,7 +184,9 @@ Or install manually — copy/symlink `skills/vibedevops` and `skills/flow` into 
 │   │       ├── deploy-handoff.sh   # Batch rollout (idempotent, --dry-run)
 │   │       ├── health-check.sh     # 0–100 readiness score; --min N turns it into a gate
 │   │       ├── test-health-check.sh # Positive/negative CI/CD scoring fixtures
-│   │       └── test-install.sh      # Global-rule pointers and skill-install fixtures
+│   │       ├── test-install.sh      # Global-rule pointers and skill-install fixtures
+│   │       ├── test-reasonix-runtime.sh # Cross-platform native Reasonix fixtures
+│   │       └── test-image-lifecycle.sh # Image retention safety fixtures
 │   └── flow/                # Workflow backbone (formerly flow-skill)
 │       └── SKILL.md
 ├── .github/workflows/ci.yml # Repository PR/main quality gate

@@ -191,6 +191,28 @@ cd VibeDevOps-skill && ./install.sh
 
 它还会向 OpenChamber/OpenCode 注册 `Reasonix-Go`、`Kimi-Code`、`Kimi-K3`、`DeepSeek-Pro` 和 `Fallback-Auto`。日常按任务选择固定 Agent，只有额度、限流或上游不可用时才按 [模型路由规则](skills/vibedevops/references/model-routing.md) fallback；OmniRoute Auto 仅作最后保障。
 
+### 可选：安装原生 Reasonix 常驻运行时
+
+已安装 `reasonix` CLI 时，可同时配置 OpenCode Go Provider、85% compaction 阈值和本机常驻服务：
+
+```bash
+./install.sh --with-reasonix-runtime
+```
+
+macOS 使用 `launchd` KeepAlive，Linux 使用 `systemd --user` Restart 并由该显式安装选项授权启用 user lingering；服务只监听 `127.0.0.1:8787` 并验证 `/healthz`。API Key 安全写入 `~/.reasonix/.env`，不会进入仓库、进程参数或服务文件。完整说明见 [Reasonix runtime 模板](skills/vibedevops/templates/reasonix-runtime/README.md)。
+
+### 可选：安装镜像容量守卫
+
+```bash
+./install.sh --with-image-lifecycle
+```
+
+本机每天清理 7 天前、未被任何容器引用且不在每仓库最新 5 份内的 Docker 镜像与 build cache；禁止 `docker image rm --force`，不碰 volume。`docker builder prune --force` 只关闭交互确认，仍只清理超过保留期的未使用 cache。生产模板还会在构建前重试清理欠账并执行容量门禁，在发布后保护 current/LKG 与 `production`/`rollback` tag；GHCR 每日 retention 保留最新 30 个 versions、生产/回滚 tag 与 6 小时新构建窗口。见 [镜像生命周期模板](skills/vibedevops/templates/image-lifecycle/README.md)。
+
+生产模板采用固定容灾顺序：局域网 Xserver 构建优先，失败切 Mac；构建出的同一份 `linux/amd64` 制品先由 GitHub hosted runner 推送 GHCR，失败才由 Xserver 推送；云端始终只按 digest 部署。为避免离线 self-hosted job 无限排队，需配置只读的 `VIBEDEVOPS_RUNNER_READ_TOKEN`，并给两台专用 runner 设置 `xserver` / `mac-builder` label；全链路从 workflow 创建时间起 1800 秒为硬上限，超时不解除回滚租约。详见 [构建门禁模板](skills/vibedevops/templates/build-gate/README.md)。
+
+需要本机每天治理个人账号下全部 GHCR packages 时，先通过 GitHub 明确授予 `delete:packages`，再运行 `./install.sh --with-ghcr-retention`；普通 Docker 守卫不会隐式扩大 token 权限。
+
 ---
 
 ## 仓库结构
@@ -203,6 +225,8 @@ cd VibeDevOps-skill && ./install.sh
 │   │   │   ├── security/    # 密钥基线：SECRETS.md（含 Infisical）、pre-commit、env.example
 │   │   │   ├── ci/          # pr-check.yml / deploy.yml（GitHub Actions 骨架）
 │   │   │   ├── build-gate/  # 弱网/资源受限环境：构建门禁三级路由 + 补验欠账
+│   │   │   ├── reasonix-runtime/ # 原生 Reasonix Provider + launchd/systemd 常驻模板
+│   │   │   ├── image-lifecycle/ # 本机/部署机 Docker + GHCR retention
 │   │   │   ├── production-checklist.md  # 监控四件套 + 环境可复现
 │   │   │   └── renovate.json            # 依赖更新基线
 │   │   ├── references/     # 模型路由与 CI/CD 最佳实践
@@ -210,7 +234,9 @@ cd VibeDevOps-skill && ./install.sh
 │   │       ├── deploy-handoff.sh   # 跨仓库批量部署（幂等，--dry-run）
 │   │       ├── health-check.sh     # 生产就绪体检（0–100 + 缺口清单，--json）
 │   │       ├── test-health-check.sh # CI/CD 评分正反例 fixtures
-│   │       └── test-install.sh      # 全局规则入口与 skills 安装 fixtures
+│   │       ├── test-install.sh      # 全局规则入口与 skills 安装 fixtures
+│   │       ├── test-reasonix-runtime.sh # 原生 Reasonix 跨平台安装 fixtures
+│   │       └── test-image-lifecycle.sh # 镜像保护与删除边界 fixtures
 │   └── flow/                # 工作流主干（原 flow-skill）
 │       └── SKILL.md
 ├── .github/workflows/ci.yml # 仓库自身 PR/main 机械门禁

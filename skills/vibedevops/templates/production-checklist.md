@@ -13,7 +13,10 @@
 - [ ] canary 前由独立部署控制器建立带充足 TTL 的可续租回滚租约，推广前续租，生产全绿后原子更新 last-known-good 并解除；整条 CI run 被取消或 runner 失联也能安全恢复。
 - [ ] 数据库使用 expand-contract，危险功能用 feature flag；应用回滚不依赖逆向执行破坏性迁移。
 - [ ] 每次发布记录 commit、制品 digest、每个功能/指标门禁 outcome、部署结果和回滚证据。
+- [ ] 成功部署后自动清理部署机未引用旧镜像/build cache，显式保护 current 与 last-known-good，禁止 `docker image rm --force`、不删 volume；下一次构建前重试清理欠账并执行容量门禁。
+- [ ] GHCR/Registry 每日 retention 已启用：生产/回滚 tag 受保护，至少保留最新 30 个 versions，新构建至少有 6 小时安全窗。
 - [ ] hosted CI 额度和 runner 在线状态有监控；额度不足时自动路由 self-hosted runner/外部 CD，不退回人工发布。
+- [ ] Xserver 构建失败会自动切 Mac，GitHub hosted push 失败会自动切 Xserver；只选择 online/idle 专用 runner，独立 hosted watchdog 在 1800 秒取消超时 workflow，`complete-deployment` 也机械拒绝过期发布。
 
 ## 一、监控四件套（最低成本，半天能搞完）
 

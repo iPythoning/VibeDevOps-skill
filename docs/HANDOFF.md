@@ -5,14 +5,14 @@
 
 ## 当前目标
 
-发布 CI/CD 最佳实践版 VibeDevOps，并把本机所有 Agent 的用户级入口收敛到 `~/AGENTS.md`；PR 合并 main 即生产授权，随后自动重验、构建一次不可变制品、渐进部署、功能验证并在失败时自动回滚。
+发布 VibeDevOps v1.1.0：在既有多模型路由、全局规则同步和自动 CI/CD 基础上，新增可复用的原生 Reasonix 常驻服务、OpenCode Go Provider 安全配置，以及本机/部署机/GHCR 三层镜像生命周期防护。
 
 ## 当前接棒状态
 
-- 状态：待接棒
-- 当前写入者：无
-- App / 模型：无
-- 分支：main
+- 状态：实现与专项复审完成，待 PR、main CI 与 Release
+- 当前写入者：Codex
+- App / 模型：Codex / GPT-5
+- 分支：feat/reasonix-runtime
 - HEAD：本次交接提交见 `git log -1 --oneline`
 - 工作树：应为干净；接棒时以 `git status --short` 为准
 - 下一棒：按具体项目任务选择，不默认启用全部模型
@@ -39,6 +39,9 @@
 - 安装器在隔离 HOME fixture 中验证所有 Agent 的规则入口、skills 链接与厂商配置保留行为。
 - 仓库自身在 PR 与 main push 上自动运行密钥扫描、Shell 语法、体检评分 fixtures 和安装器 fixtures。
 - 生产体检识别 `scripts/test-*.sh` 形式的轻量 Shell 测试，不再把脚本型仓库误判为无测试。
+- 原生 Reasonix 模板在 macOS/Linux 上幂等生成服务，强制 loopback，安全存储 Provider Key，并通过隔离 fixture 与真实 Reasonix `doctor` 解析验证。
+- 镜像生命周期 fixture 证明容器引用、最新版本、生产/回滚 tag 与 current/LKG 不会被删；本机定时守卫和 GHCR retention 均默认保守且可审计。
+- 生产镜像链路固定为 Xserver 构建优先、Mac fallback，GitHub hosted push GHCR 优先、Xserver fallback；只向 online/idle 专用 runner 派单，并在 workflow 创建后 1800 秒内完成云端推广，否则回滚。
 
 ## 已完成
 
@@ -53,10 +56,21 @@
 - 2026-08-10：新增仓库自身 CI 与 `.env`/备份忽略规则，发布 VibeDevOps 前不再依赖本机自觉验证。
 - 2026-08-10：GitHub CI 首轮暴露 GNU/BSD `stat` 差异；fixture 已按操作系统分支修复，并把 checkout 统一升级到官方 v5 固定 SHA。
 - 2026-08-10：主干 CI 通过后发现 Gitleaks v2 的 Node 20 弃用警告；工作流与模板已升级到官方 v3.0.0 固定 SHA（Node 24）。
+- 2026-08-10：新增原生 Reasonix v1.21.5 常驻模板；本机 launchd、OpenCode Go Provider、85% compaction 与 loopback `/healthz` 已实装验证，安装器二次运行不产生漂移备份。
+- 2026-08-10：新增 Docker/GHCR 三层镜像生命周期；本机 launchd、xserver 与 pulse systemd timer 已安装，Docker 删除保护所有容器引用且不使用 force/不删 volume。
+- 2026-08-10：xserver 安全删除 22 个旧镜像，镜像占用从 26.02GB 降至 17.29GB；个人 GHCR 从 1107 个 versions 降至 472。本轮基于完整 OCI 图再删 71 个；21 个 package 均不超过 30，`wa-sdr-core` 为最新 30 + 1 个受保护版本。
+- 2026-08-10：生产 build 模板支持 `VIBEDEVOPS_BUILD_RUNNER` 路由到局域网 `lan-builder` self-hosted runner，BuildKit state 复用并限时清理；生产服务器只拉 digest。
+- 2026-08-10：生产模板升级为确定性双 fallback：Xserver→Mac 构建、GitHub hosted→Xserver 推送；同一份临时 image tar 在路径间交接，推送后生成 provenance/SBOM，云端只接收 digest。
+- 2026-08-10：容量欠账成为下次构建前置门禁；生产/rollback tag 在解除回滚租约前更新，回滚会恢复 production tag；GHCR 通过 Registry manifest 构造受保护 OCI 引用闭包，图不完整时整个 package 保守不删。
+- 2026-08-10：新增独立 hosted deadline watchdog，消除 self-hosted runner 状态检查与入队竞态导致的无限排队；状态查询失败退避重试，1800 秒后持续重试 force-cancel/cancel，部署控制器仍独立拒绝过期 complete。
+- 2026-08-10：runner registration token 改用官方 `ACTIONS_RUNNER_INPUT_TOKEN` 临时环境，不进入 argv；Linux 移除 `KillMode=process`，stop/restart 使用 systemd control-group 清理完整 listener 进程树，并新增隔离行为 fixture。
+- 2026-08-10：OCI 保护闭包增加 `subject.digest` 反向 referrer，production/rollback 对应的 provenance 与 SBOM 不会因 retention 丢失；runner `.runner` 仓库 URL 改为 jq 精确比较并覆盖前缀碰撞负例。
+- 2026-08-10：当前 `iPythoning/VibeDevOps-skill` 已注册并常驻 `xserver-vibedevops`（Linux/X64/xserver）与 `mac-vibedevops`（macOS/ARM64/mac-builder），两者 GitHub 状态均为 online/idle；Xserver 使用非 root `gha` 用户与 lingering，Mac launchd 会拉起 Docker Desktop。
+- 2026-08-10：runner listener 统一以 `env -i` 最小环境启动，验证未继承 API key/secret 类变量；清除了 Xserver 首次 root 误装留下的 666 MiB 未注册 runner 目录。
 
 ## 进行中
 
-（无）
+- v1.1.0 PR、main CI 与 Release 发布；镜像/CD 专项复审结论为 `APPROVE`。
 
 ## 已知坑 / 注意事项
 
@@ -65,21 +79,33 @@
 - OpenChamber 的 Codex/GPT 路由本次 smoke test 不可用；修复凭证/地区前继续使用 Codex 原生 App。
 - OpenCode Agent 一次只能绑定一个模型；硬额度错误发生在模型响应前时，需在 OpenChamber 一键选择下一 Agent。只有 OmniRoute Combo 能在单请求内自动降级。
 - 既有仓库不会被模板自动覆盖；需要在目标仓库显式运行 `/vibedevops 交接` 或现有部署脚本升级。
+- `wa-sdr-core` 当前 31 个 GHCR versions 是最新 30 + 1 个生产/回滚保护版本，不应为追求数字强删。账户级每日 04:00 retention 已升级为带 GET/DELETE 重试的 OCI 引用闭包版本；任一 package 图不完整会候选归零。
+- pulse 当前 40 个容器全部运行，镜像清理 dry-run 候选为 0；Docker 显示的“可回收”共享层不能用 force 清除。xserver/pulse 的 volume 不属于镜像缓存，自动守卫明确不删除。
+- GitHub 个人账号的 self-hosted runner 是 repository scoped；当前两台 runner 只注册到 `iPythoning/VibeDevOps-skill`，应用到任何生产仓库时必须用该仓库的一次性 registration token 再注册一个实例。
+- runner 在线/忙碌预检需要目标仓库 secret `VIBEDEVOPS_RUNNER_READ_TOKEN`（fine-grained，仅 `Administration: read`）。GitHub 不允许流水线自动铸造这种长期凭据；当前未把本机拥有 `repo/workflow/user` 等广泛 scope 的 classic token复制到仓库，避免为“全自动”扩大泄露半径。
 
 ## 下一步
 
-将更新后的 CI/CD 模板应用到具体生产仓库；按 `references/ci-cd-best-practices.md` 补齐验证、OIDC、last-known-good/arm-rollback/renew-rollback/canary/promote/complete-deployment/rollback、功能门、指标门和告警脚本。回滚租约必须由 Actions runner 之外的部署控制器持有。
+完成专项复审并发布 v1.1.0。随后由用户指定首个生产仓库，在该仓库注册两台 runner、创建最小权限 `VIBEDEVOPS_RUNNER_READ_TOKEN`，再按 `references/ci-cd-best-practices.md` 补齐 OIDC、last-known-good/回滚租约、功能门、指标门和告警脚本；不能把当前 skill 仓库的 repository runner 误当成全账号共享资源。
 
 ## 如何验证
 
+2026-08-10 收尾验证已通过：build runner、image lifecycle、CI/CD health、全局安装器 fixtures，仓库 health check，Actionlint，skill quick validate，Gitleaks（工作树与 Git 历史）和 `git diff --check`。Reasonix 真实二进制兼容性由仓库 CI 固定 v1.21.5 + SHA256 验证。
+
 - `bash -n install.sh skills/vibedevops/scripts/deploy-handoff.sh skills/vibedevops/scripts/health-check.sh skills/vibedevops/scripts/test-health-check.sh skills/vibedevops/scripts/test-install.sh`
 - `./skills/vibedevops/scripts/test-health-check.sh`
+- `./skills/vibedevops/scripts/test-build-runner.sh`
 - `./skills/vibedevops/scripts/test-install.sh`
+- `./skills/vibedevops/scripts/test-reasonix-runtime.sh`
+- `./skills/vibedevops/scripts/test-image-lifecycle.sh`
+- `bash -n skills/vibedevops/templates/build-gate/install-github-runner.sh`
 - `actionlint skills/vibedevops/templates/ci/pr-check.yml skills/vibedevops/templates/ci/deploy.yml`
+- `actionlint skills/vibedevops/templates/ci/image-retention.yml .github/workflows/ci.yml`
 - `actionlint .github/workflows/ci.yml`
 - `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/vibedevops`
 - `git diff --check`
 - `./skills/vibedevops/scripts/health-check.sh --json .`
+- `gh api repos/iPythoning/VibeDevOps-skill/actions/runners --jq '.runners[] | {name,status,busy,labels:[.labels[].name]}'`
 
 ## 最近交接记录
 

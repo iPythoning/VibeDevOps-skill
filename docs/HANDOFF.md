@@ -77,6 +77,7 @@
 - 2026-08-10：Alpine 官方 CDN 在本机冷构建 300 秒超时，切到 Alpine 官方镜像列表收录的阿里云公共包源后，29 个固定版本包安装耗时 8.1 秒；镜像 health=healthy、UID=10001、`/healthz=ok`、amd64、18,241,191 bytes。
 - 2026-08-10：`install.sh` 已在本机实装受管 DevOps 区块，Claude/Codex/OpenCode/OpenChamber/Cursor/Gemini/Qwen/Windsurf 与 9 个 skills surface 全部指向 Git checkout；二次执行无新备份。
 - 2026-08-10：仓库 CI 新增 main 自动 GitHub Release 与失败回滚，v1.1.1 release/tag 当前均未预占，release notes 可从 CHANGELOG 确定生成。
+- 2026-08-10：main workflow concurrency 改为按 commit SHA 唯一，连续版本不会因 GitHub“同组只保留一个 pending run”的语义跳过中间 CI/Release；PR 仍会取消同分支旧运行。
 
 ## 进行中
 

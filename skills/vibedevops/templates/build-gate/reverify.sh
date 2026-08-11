@@ -29,7 +29,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=8 "$BUILDER_SSH" true 2>/dev/null || exit
 TMP="$(mktemp)"
 while IFS=$'\t' read -r TS REPO PROJECT SHA CMD; do
   [ -n "$REPO" ] || continue
-  if [ ! -d "$REPO/.git" ]; then
+  # 同 build-gate：worktree 的 .git 是文件不是目录，只判 -d 会漏掉全部 worktree
+  if ! git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
     echo "✗ 丢弃 ${PROJECT}：仓库 $REPO 已不存在"
     continue
   fi

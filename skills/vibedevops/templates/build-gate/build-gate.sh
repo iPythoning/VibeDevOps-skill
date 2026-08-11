@@ -50,7 +50,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$REPO" ] && [ -d "$REPO/.git" ] || { echo "用法: $0 <repo> --cmd \"<gate command>\" [--force-cloud|--force-builder|--force-local]"; exit 1; }
+# git worktree 的 .git 是**文件**（内容是指向主检出的 gitdir），不是目录。
+# 只判 `-d` 会把所有 worktree 拒之门外——而交接协议恰恰要求多个 agent 并行时
+# 用 worktree 隔离写入。于是「规定的流程」和「规定的门禁」互相打架，人只能
+# 绕过门禁手搓，降级路由形同虚设。用 git 自己的判断，不要猜文件类型。
+[ -n "$REPO" ] && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || { echo "用法: $0 <repo> --cmd \"<gate command>\" [--force-cloud|--force-builder|--force-local]"; exit 1; }
 [ -n "$CMD" ] || { echo "❌ 必须用 --cmd 指定门禁命令（如 \"npm ci && npm test && npm run build\"）"; exit 2; }
 
 # 机会式销账：有欠账就先试着还（内嵌于每次构建，不依赖 cron —— 构建越勤销得越快）。

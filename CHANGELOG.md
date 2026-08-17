@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.0 — 2026-08-17
+
+- 无人值守 runner failover 闭环（ADR 0007）：检测托管 CI 账单/额度拒绝签名→自动切自建 runner→hosted 探针恢复→自动切回；断连型 job（failure 但 0 failed-step 且已分配 runner）自愈重跑；纳管范围自动发现（注册 runner 即纳管）。新模板 `templates/ci/runner-failover.sh` + `hosted-canary.yml`。
+- 网络自适应路由层（ADR 0007，`templates/build-gate/net-adaptive.sh`）：路由是探测结果非配置，探测 direct/proxy→决策 DIRECT/PROXY/DOWN→应用到 runner git+出境 env；环境无关（今天要代理/明天不要都自动适应）、只在路由变化时动作、忙 runner 跳过重启不打断在跑 job。
+- 三车道一键切换 `templates/ci/cd-lane.sh`：hosted/builder/mac 互斥变量组一次原子设齐，杜绝"少设一个卡一步"。
+- 基础镜像预烤零跨境 `templates/build-gate/warm-base-images.sh`：镜像站拉基础/CI 镜像 retag 规范名 + docker 直建驱动本地命中，构建期唯一出境只剩推 registry。
+- 构建机出境代理方法论 `references/egress-proxy.md`（工具无关）：自建出境代理根治间歇封锁；端口访问控制靠 iptables 网络层且必须幂等（防规则累积成全开放隐患）；容器 CI 经 host-gateway 回连宿主代理。
+- SKILL §4.5 扩写：从"手动降级是治标"升级为无人值守闭环 + 网络自适应；受管全局规则同步新条款。
+
 ## v1.2.1 — 2026-08-17
 
 - 受管全局规则新增「新增仓库一律走这条线」：CI/CD 从模板起步（内置变量路由）、统一构建机注册 runner 即自动进入账单故障 failover 纳管（自动发现）；单 runner 单监管者铁律（叠加监管抢会话，当日实测事故）。

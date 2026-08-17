@@ -108,6 +108,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 ### 4.2 CI 三件套（`templates/ci/`）
 
 - `pr-check.yml`：密钥扫描 + lint/type/test，PR 必过（含 Node/Python/Go 三语言注释替换段）
+- `runner-canary.yml`：托管 CI 故障日的分层定位探针——self-hosted 调度、构建机 checkout、分域名连通三问，先实证再路由（ADR 0006）；所有必过 job 的 `runs-on` 走仓库变量，额度/账单故障期一条 `gh variable set` 切自建 runner
 - `deploy.yml`：PR 合并进 main 后，按 Xserver→Mac 构建 fallback、GitHub hosted→Xserver GHCR push fallback 路由同一份不可变制品，以 OIDC 短期身份自动部署；功能层 smoke/canary 失败自动回滚并复验，端到端强制小于 30 分钟
 - `image-retention.yml`：每日清理 GHCR 过期 manifest/SHA 版本，至少保留 30 个版本并保护生产/回滚 tag；部署机清理由 `deploy.sh cleanup-images` 在成功推广后执行
 - 回滚标准动作：见 RUNBOOK
@@ -121,6 +122,7 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **上线即留退路**：每次部署前写下"这步怎么 revert"；`git revert` 优先于修复 patch
 - **数据库变更纪律**：迁移前一行命令备份；expand-contract 拆两次部署；AI 生成的 `DROP`/全表 `ALTER`/`UPDATE` 必须逐行人工过目
 - **事故三板斧**：止损（回滚/降级）→ 定位（Sentry → 日志 → 最近 `git log`）→ 复盘（blameless 5-why，产出 ADR）
+- **破坏性命令三级分级 + manifest 备份**（`references/dangerous-commands.md`）：Blocked 永拒 / Dangerous 先备份再确认 / Warning 提示；破坏性操作前的备份必须带 manifest（时间戳、原命令、路径映射），恢复按 manifest 精确放回；体检/诊断输出契约=阈值+当前值+severity+可复制的修复命令
 
 ### 4.4 监控与环境（`templates/production-checklist.md`）
 
@@ -135,7 +137,10 @@ Vibe Coder 的典型事故不是看不懂代码，而是密钥泄露、没有 CI
 - **机器角色锁死**：开发机只做内循环（受影响测试 + 类型检查）；专用构建机做全量验证；生产机只拉已验证制品、绝不构建。角色写死，每台机器的资源消耗才有上限。
 - **三级路由门禁**：CLOUD（CI）→ BUILDER（专用构建机）→ LOCAL（本机兜底），自动降级，三条路跑同一条命令、写同一份 `docs/BUILD-EVIDENCE.md`，区别只在证据强度标注。**CI 额度查不到时按不足处理——"以为 CI 在跑其实没跑"是最危险的静默失败。**
 - **降级会「装了却没生效」，四个已验证的坑**（2026-08 实战复盘，详见 `templates/build-gate/README.md`）：① 门禁判 `[ -d .git ]` 会拒绝所有 git worktree，而交接协议恰恰要求用 worktree 并行；② 门禁镜像与生产镜像不同源时，绿了也没有意义；③ 验证命令写成 `.venv/bin/...` 这类只在本机成立的形式，一进干净容器就 127；④ **三级降级只覆盖 CI，不覆盖 CD**——CI 一死就无法发布，这一点必须事前写明。
-- **`self-hosted` runner 通常不计费**：把 PR 门禁迁到自有构建机，才是额度/账单问题的根治；每次手动降级是治标。
+- **`self-hosted` runner 通常不计费**：把 PR 门禁迁到自有构建机，才是额度/账单问题的根治；每次手动降级是治标。2026-08-17 实证：账单欠费只拒 hosted job（3 秒 0 步被拒），self-hosted 照常调度执行，Packages/API/git 也全部正常——**瘫的不是托管方，是 `runs-on:` 里写死的 hosted 标签**。
+- **runner 不写死，由仓库变量路由**（ADR 0006）：`runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}`，CD job 用 `CD_RUNNER`。默认 hosted 优先不变；故障期一条 `gh variable set` 切自建 runner，恢复一条 `delete` 切回——分钟级、零代码、无需重跑 PR 流程。区域特化（镜像前缀 `CI_REGISTRY_MIRROR`、pip/npm 源、buildx cache 类型）同套变量走，默认官方源。
+- **故障日先跑 canary 再下结论**（`templates/ci/runner-canary.yml`）：self-hosted 能否调度、构建机 checkout 通不通、各域名连通实况——网络结论有时效性（同一台构建机对 github.com 的可达性在两周内翻转过两次），禁止引用历史结论做路由决策。
+- **控制面与构建面不挤同一个单并发 runner**：deadline watchdog 这类长驻控制 job 必须路由到独立 runner 池（如 mac-builder），否则占满唯一构建 slot 形成自饿死。每台构建机双注册（linux 构建标签 + mac fallback 标签）是底线配置。
 - **弱网诊断先分域名测**：`000` 且 `<0.05s` = 被阻断，`000` 且接近 timeout = 真不通；overlay 网络走中继时 RTT 可达 1–2 秒，短 `ConnectTimeout` 会把健康机器误判成失联。
 - **构建时限铁律**：任何门禁 `GATE_TIMEOUT`（默认 600s）机械强制，超时强杀、证据记耗时。超时 = 修构建（缓存/依赖/拆分），不许调大上限。
 - **补验欠账（去 cron 化）**：LOCAL 兜底通过 ≠ 结案，只是欠账。记录进队列，销账内嵌在 build-gate 启动路径——之后任何一次构建自动补验（构建越勤销得越快，不依赖 cron 也不怕机器睡眠）；**欠账未销的 commit 禁止发布**。

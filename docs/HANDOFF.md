@@ -5,17 +5,17 @@
 
 ## 当前目标
 
-维护已发布的 VibeDevOps v1.1.1：Dockerfile、镜像源 fallback、digest 与构建入口已经完全仓库化；Xserver 与 Mac 可从同一 commit 构建，不依赖任何机器私有文件或 cache。
+发布 v1.2.0：CI/CD runner 由仓库变量路由（ADR 0006），托管额度/账单故障即时免疫。2026-08-17 账单欠费日全链实证：hosted job 3 秒被拒、self-hosted 照常调度；变量路由模式已在 iPythoning/clawops#112 与 iPythoning/PulseAgent#347 落地（CI 实跑在 xserver runner 上）。
 
 ## 当前接棒状态
 
-- 状态：v1.1.1 已发布；PR #5、main CI、自动 Release 与标签校验全部通过
-- 当前写入者：Codex
-- App / 模型：Codex / GPT-5
-- 分支：main
-- HEAD：`65c1834a81186ee75f6f97717a8a8d070dc05b3d`（v1.1.1）
+- 状态：v1.2.0 内容完成于 `feat/actions-quota-immune-cicd` 分支，验证基线全绿（6 fixtures + 体检 + yaml/bash -n）；待 PR 合并 main 触发自动 Release
+- 当前写入者：Claude Code
+- App / 模型：Claude Code / Fable 5
+- 分支：feat/actions-quota-immune-cicd
 - 工作树：应为干净；接棒时以 `git status --short` 为准
-- 下一棒：按具体项目任务选择，不默认启用全部模型
+- 下一棒：合并本 PR 后，跑 `./install.sh` 让受管块新条款同步进 ~/AGENTS.md；再按需把变量路由推广到其余产品仓（trade-crm / wechat-scrm / portal 等）
+- 附注：xserver 侧 2026-08-17 运维——PA 专用 runner（`/lzcsys/data/gha-build/runner`）进程未继承 docker 组已重启修复（新进程 Groups 含 996）；该机 12 个 runner 均为 nohup 起、无 systemd/cron 守护，重启机器后需手工拉起
 
 ## 模型路由状态
 

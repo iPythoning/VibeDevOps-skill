@@ -14,8 +14,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # runner 由仓库变量路由（ADR 0006）：默认 hosted；托管额度/账单故障期
+  #   gh variable set CI_RUNNER --body '["self-hosted","<builder-label>"]'
+  # 即切自建 runner（self-hosted 不受额度/账单影响），恢复后 gh variable delete 即回。
+  # 故障日先跑 templates/ci/runner-canary.yml 实证，再切。
   secrets-scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -31,7 +35,7 @@ jobs:
       # - run: npm install -g @infisical/cli && infisical scan
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

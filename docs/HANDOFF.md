@@ -15,7 +15,7 @@
 - 分支：feat/actions-quota-immune-cicd
 - 工作树：应为干净；接棒时以 `git status --short` 为准
 - 下一棒：合并本 PR 后，跑 `./install.sh` 让受管块新条款同步进 ~/AGENTS.md；再按需把变量路由推广到其余产品仓（trade-crm / wechat-scrm / portal 等）
-- 附注：xserver 侧 2026-08-17 运维——PA 专用 runner（`/lzcsys/data/gha-build/runner`）进程未继承 docker 组已重启修复（新进程 Groups 含 996）；该机 12 个 runner 均为 nohup 起、无 systemd/cron 守护，重启机器后需手工拉起
+- 附注（2026-08-17 当日晚些修正）：xserver 的 runner **一直有系统级 `github-actions-<name>.service` 单元守护**（先前"nohup 无守护"是用 `*runner*` 通配漏搜的误判）。现状：13 单元全部 enable + `SupplementaryGroups=docker` drop-in（PA runner 缺 docker 组的根因即由此根治）。铁律：**一个 runner 只许一个监管者**——叠加 svc.sh / user 单元会双听抢会话导致全场 offline（当日实测事故）；单元为 KillMode=process，重启须用 agents-toolchain 的 `xserver-runner-systemd.sh` restart_clean 防孤儿双听。无人值守闭环（账单故障自动切换/恢复 watcher + hosted-canary 探针仓）见 agents-toolchain 仓 `scripts/runner-failover.sh`
 
 ## 模型路由状态
 

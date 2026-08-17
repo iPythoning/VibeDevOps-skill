@@ -24,7 +24,7 @@
 - 在 canary 前由独立部署控制器建立带充足 TTL 的可续租回滚租约，在推广开始前续租；只有生产功能门和指标门全绿后，才由控制器原子完成“更新 last-known-good + 解除租约”。这样即使 Actions 整条 run 被取消、runner 失联或 GitHub 不再调度 rollback job，控制器仍会自动恢复 last-known-good。显式 rollback job 用于快速恢复，租约是最终保险。
 - 发布过程中禁止把“取消 workflow”当作回滚操作；取消只停止 GitHub 调度，不保证已执行的生产副作用被撤销。
 - 镜像清理禁止 `docker image rm --force` 和自动删除 volume；所有容器引用都保护。`docker builder prune --force` 仅关闭交互确认，必须限定过期且未使用 cache。清理失败单独告警并在下一次构建前重试；容量或清理债务超限时禁止制造新镜像，但不因容量维护失败回滚已经验证为健康的生产版本。
-- hosted CI 额度或容量不足时切换到受监控的 self-hosted runner/外部 CD 控制器；正常发布路径仍由 `push main` 自动触发，不能退化为人工命令。
+- hosted CI 额度或容量不足时切换到受监控的 self-hosted runner/外部 CD 控制器；正常发布路径仍由 `push main` 自动触发，不能退化为人工命令。切换机制见 ADR 0006：`runs-on` 由仓库变量路由（`CI_RUNNER`/`CD_RUNNER`），故障日先跑 `templates/ci/runner-canary.yml` 实证调度与连通，再一条 `gh variable set` 完成切换；恢复即删变量回 hosted。额度/账单故障只影响 hosted 计算，不影响 self-hosted 调度与 Packages/API/git（2026-08-17 实证）。
 
 ## 持续交付与持续部署
 

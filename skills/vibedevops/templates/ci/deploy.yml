@@ -14,13 +14,15 @@ concurrency:
 
 jobs:
   deadline_watchdog:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 35
     permissions:
       actions: write
       contents: read
     steps:
-      # 独立 hosted job 不依赖 self-hosted 队列；即使 build job 排队，也会在绝对 deadline 强制取消。
+      # 独立控制面 job 不依赖构建 runner 队列；即使 build job 排队，也会在绝对 deadline 强制取消。
+      # 托管额度/账单故障期把 VIBEDEVOPS_CONTROL_RUNNER 指到**独立的** runner 池（如 mac-builder）：
+      # 本 job 会占住 runner 长达 35 分钟，与构建 job 挤同一个单并发 runner 会把构建饿死（ADR 0006 §5）。
       - name: Cancel any deployment that reaches 30 minutes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,7 +56,7 @@ jobs:
           done
 
   runner_route:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 1
     permissions:
       actions: read
@@ -99,7 +101,7 @@ jobs:
           echo "mac=$mac" >> "$GITHUB_OUTPUT"
 
   capacity:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 2
     environment: production
     permissions:
@@ -190,7 +192,7 @@ jobs:
   select_build:
     needs: [runner_route, capacity, build_xserver, build_mac]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 1
     outputs:
       artifact: ${{ steps.select.outputs.artifact }}
@@ -215,7 +217,7 @@ jobs:
 
   push_github:
     needs: select_build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 3
     permissions:
       contents: read
@@ -329,7 +331,7 @@ jobs:
   select_push:
     needs: [select_build, push_github, push_xserver]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 1
     outputs:
       image: ${{ steps.select.outputs.image }}
@@ -361,7 +363,7 @@ jobs:
 
   prepare:
     needs: select_push
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 1
     environment: production
     permissions:
@@ -382,7 +384,7 @@ jobs:
 
   canary:
     needs: [select_push, prepare]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 3
     environment: production-canary
     permissions:
@@ -415,7 +417,7 @@ jobs:
 
   promote:
     needs: [runner_route, select_push, prepare, canary]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 3
     environment: production
     permissions:
@@ -481,7 +483,7 @@ jobs:
   rollback:
     needs: [select_push, prepare, canary, promote]
     if: ${{ always() && (needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 4
     environment: production
     permissions:
@@ -521,7 +523,7 @@ jobs:
   cleanup:
     needs: [select_push, prepare, promote]
     if: ${{ needs.promote.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 4
     environment: production
     permissions:
@@ -539,7 +541,7 @@ jobs:
   alert:
     needs: [runner_route, capacity, build_xserver, build_mac, select_build, push_github, push_xserver, select_push, prepare, canary, promote, rollback, cleanup]
     if: ${{ always() && (needs.runner_route.result == 'failure' || needs.capacity.result == 'failure' || needs.select_build.result == 'failure' || needs.select_push.result == 'failure' || needs.prepare.result == 'failure' || needs.canary.result == 'failure' || needs.canary.result == 'cancelled' || needs.promote.result == 'failure' || needs.promote.result == 'cancelled' || needs.rollback.result == 'failure' || needs.rollback.result == 'cancelled' || needs.cleanup.result == 'failure') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 2
     permissions:
       contents: read
@@ -550,7 +552,7 @@ jobs:
   evidence:
     needs: [runner_route, capacity, build_xserver, build_mac, select_build, push_github, push_xserver, select_push, prepare, canary, promote, rollback, cleanup]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.VIBEDEVOPS_CONTROL_RUNNER && fromJSON(vars.VIBEDEVOPS_CONTROL_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 1
     permissions:
       contents: read

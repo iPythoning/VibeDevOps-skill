@@ -1,0 +1,52 @@
+# runner-canary.yml — 托管 CI 故障日的分层定位探针（放到 .github/workflows/）
+#
+# 用途：hosted job 全红时，先用它回答三个问题，再决定路由——禁止引用历史网络结论：
+#   1. self-hosted job 还能不能被调度？（额度/账单故障不影响 self-hosted 是常态，但要当日实证）
+#   2. 构建机到 git 托管面（checkout）通不通？
+#   3. 构建机到镜像面 / 包源各域名的连通实况如何？（分域名测：000 且 <0.05s = 被阻断）
+#
+# 用法：把本文件提交到一个临时分支并 push（如 ci/canary-selfhosted），看运行结果后删分支。
+#   探针绿 → 按 ADR 0006 设置 CI_RUNNER/CD_RUNNER 等仓库变量完成路由切换。
+#   sched 绿而 checkout 红 → 构建机到 git 托管面被阻断，只能走"驱动式构建"（ssh + git bundle）。
+#   连 sched 都不派发 → 托管方连 self-hosted 调度都停了，进入整体不可用模式（按房规停止发布）。
+name: Runner Canary
+
+on:
+  push:
+    branches: [ci/canary-selfhosted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sched:
+    # 改成你的构建机标签；只测调度与网络，不 checkout，避免把两个问题混在一起。
+    runs-on: [self-hosted, xserver]
+    timeout-minutes: 6
+    steps:
+      - name: 调度实证 + 分域名连通探测
+        run: |
+          echo "scheduled-ok on $(uname -a)"
+          for host in github.com api.github.com ghcr.io registry-1.docker.io; do
+            curl -sS -o /dev/null -w "$host=%{http_code} t=%{time_total}s\n" --max-time 8 "https://$host" \
+              || echo "$host unreachable"
+          done
+
+  checkout:
+    runs-on: [self-hosted, xserver]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: checkout 实证
+        run: git rev-parse HEAD
+
+  mac:
+    # 第二 runner 池的调度实证（没有就删掉本 job）。
+    runs-on: [self-hosted, mac-builder]
+    timeout-minutes: 6
+    steps:
+      - name: 调度实证
+        run: |
+          echo "scheduled-ok on $(uname -a)"
+          docker version --format 'docker-server={{.Server.Version}}' || true

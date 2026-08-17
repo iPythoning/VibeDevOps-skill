@@ -15,6 +15,8 @@
 
 ## 二、数据库变更纪律（vibe coding 重灾区）
 
+0. **任何破坏性操作前先落带 manifest 的备份**（时间戳、原命令、路径映射三要素，见
+   `references/dangerous-commands.md`）；回滚步骤引用 manifest 路径，不写没有坐标的"从备份恢复"。
 1. **迁移前先备份**，一行命令的事：
    - PostgreSQL：`pg_dump -Fc $DATABASE_URL > backup-$(date +%F-%H%M).dump`
    - MySQL：`mysqldump $DB_NAME | gzip > backup-$(date +%F-%H%M).sql.gz`

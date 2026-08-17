@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.0 — 2026-08-17
+
+- CI/CD runner 由仓库变量路由（ADR 0006）：`pr-check.yml` 与 `deploy.yml` 全部必过 job 的 `runs-on` 走 `CI_RUNNER`/`CD_RUNNER`/`VIBEDEVOPS_CONTROL_RUNNER` 变量，默认 hosted 不变；托管额度/账单故障期一条 `gh variable set` 切 self-hosted，恢复即删。账单欠费日实证：hosted job 3 秒被拒、self-hosted 照常调度，GHCR/API/git 均正常。
+- 新增 `templates/ci/runner-canary.yml`：故障日分层定位探针（self-hosted 调度 / 构建机 checkout / 分域名连通），路由决策只认当日实证，禁止引用历史网络结论。
+- `deploy.yml` 控制面 job 与构建 job 的 runner 池隔离纪律：长驻 watchdog 不得与构建挤同一个单并发 runner（自饿死陷阱）。
+- build-gate 降级缺口 ④ 按失效模式拆分：托管额度/账单故障模式已由变量路由关闭；托管方整体不可用模式维持"事前写明无法发布"。
+- 新增 `references/dangerous-commands.md`：破坏性命令三级分级（Blocked/Dangerous/Warning）、受保护路径清单、manifest 驱动的操作前备份、体检输出四件套契约（吸收自一个 MIT 协议开源 CLI 的思路，按本仓纪律重写并剥离上游元素）。
+- 受管全局规则新增 runner 变量路由与 canary 实证条款；`RUNBOOK` 模板补破坏性操作前 manifest 备份步骤。
+
 ## v1.1.1 — 2026-08-10
 
 - 新增仓库级 Dockerfile 与 `.dockerignore`，Mac、Xserver、CI 从同一 Git commit 构建，不再依赖机器私有文件。

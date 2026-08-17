@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.1 — 2026-08-17
+
+- 受管全局规则新增「新增仓库一律走这条线」：CI/CD 从模板起步（内置变量路由）、统一构建机注册 runner 即自动进入账单故障 failover 纳管（自动发现）；单 runner 单监管者铁律（叠加监管抢会话，当日实测事故）。
+- HANDOFF 修正 runner 守护误判（github-actions-* 系统单元一直存在）。
+
 ## v1.2.0 — 2026-08-17
 
 - CI/CD runner 由仓库变量路由（ADR 0006）：`pr-check.yml` 与 `deploy.yml` 全部必过 job 的 `runs-on` 走 `CI_RUNNER`/`CD_RUNNER`/`VIBEDEVOPS_CONTROL_RUNNER` 变量，默认 hosted 不变；托管额度/账单故障期一条 `gh variable set` 切 self-hosted，恢复即删。账单欠费日实证：hosted job 3 秒被拒、self-hosted 照常调度，GHCR/API/git 均正常。

@@ -44,6 +44,10 @@ jobs:
             skills/vibedevops/scripts/test-install.sh \
             skills/vibedevops/scripts/test-reasonix-runtime.sh \
             skills/vibedevops/templates/build-gate/install-github-runner.sh \
+            skills/vibedevops/templates/ci/runner-failover.sh \
+            skills/vibedevops/templates/ci/cd-lane.sh \
+            skills/vibedevops/templates/build-gate/net-adaptive.sh \
+            skills/vibedevops/templates/build-gate/warm-base-images.sh \
             skills/vibedevops/templates/build-gate/build-container-image.sh \
             skills/vibedevops/templates/reasonix-runtime/health-check.sh \
             skills/vibedevops/templates/reasonix-runtime/install.sh \

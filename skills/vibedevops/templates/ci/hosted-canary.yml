@@ -1,0 +1,49 @@
+# hosted-canary.yml — GitHub hosted 计算「恢复探针」（放到 .github/workflows/）
+#
+# 用途：runner-failover watcher 闭环里的「hosted 是否恢复」探子。它是账单/额度故障态下
+#       唯一被定时 dispatch 的 workflow，钉死 runs-on: ubuntu-latest，别的什么都不干。
+#
+# 它在 failover 闭环里的角色（配合 runner-failover.sh watcher 使用）：
+#   正常态：不跑。watcher 在哨兵仓检测到「账单拒绝签名」时，把各仓路由切到 self-hosted runner。
+#   故障态：watcher 每隔一段时间（默认 1 小时）对本 workflow 发一次 workflow_dispatch——
+#           · 账单/额度真坏着  → 派发直接被 GitHub 拒（hosted 分钟被禁），零消耗、零成本；
+#           · hosted 已恢复    → 探针在 ubuntu-latest 上跑绿 = 计算面回来了，watcher 随即
+#                                删掉切换变量、把各仓路由自动切回 hosted，并通知。
+#
+# 为什么单独一个探针 workflow / 甚至单独一个探针仓（PROBE_REPO）：
+#   1) 钉死 ubuntu-latest —— 它必须走 hosted 计算，才能反映 hosted 的真实可用性；
+#      放在会被 failover 切成 self-hosted 的业务仓里会自欺（self-hosted 永远跑得动）。
+#   2) 最小化 —— 账单坏时「被拒」本身就是信号，不产生费用；跑起来也只有几秒。
+#
+# ── 占位符（本文件是公开模板，按你自己的坐标替换）───────────────────────────
+#   本 workflow 无需任何仓库坐标；watcher 侧需要配的是：
+#     PROBE_REPO        探针所在仓（可专门建一个空仓，如 <owner>/hosted-canary）
+#     PROBE_WORKFLOW    本文件名（hosted-canary.yml）
+#     PROBE_INTERVAL    两次 dispatch 的最小间隔秒数（默认 3600）
+#   这些都在 watcher 脚本里配，workflow 本体保持零硬编码。
+# ────────────────────────────────────────────────────────────────────────────
+
+name: Hosted Canary
+
+on:
+  # 只被 watcher 定时 dispatch；不要加 push/schedule，否则会在正常态白烧 hosted 分钟。
+  workflow_dispatch:
+
+permissions:
+  contents: none            # 探针不读代码、不写任何东西，权限收到最小。
+
+# 同一时刻只留一个探针在跑，重复 dispatch 直接顶掉旧的，避免堆积。
+concurrency:
+  group: hosted-canary
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    # 关键：钉死 hosted runner。这一行就是整个探针的意义所在，别改成 self-hosted。
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: hosted 计算存活实证
+        # 能执行到这一步 = 派发没被账单/额度拒 = hosted 分钟可用。
+        # 不做 checkout、不拉镜像、不装依赖：探的是「计算面通不通」，不是构建能不能过。
+        run: echo "hosted-ok on $(uname -srm) @ $(date -u +%FT%TZ)"

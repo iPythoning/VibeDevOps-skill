@@ -1,0 +1,9 @@
+[Unit]
+Description=Auto-onboard new repos onto self-hosted CI lane (ADR 0010 reconcile loop)
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# 按部署环境填齐 ONBOARD_* 环境（或用 EnvironmentFile）
+EnvironmentFile=-/etc/onboard-reconcile.env
+ExecStart=/usr/local/sbin/onboard-reconcile

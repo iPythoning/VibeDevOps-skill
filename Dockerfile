@@ -12,40 +12,24 @@ LABEL org.opencontainers.image.title="VibeDevOps" \
       org.opencontainers.image.revision="$VCS_REF" \
       org.opencontainers.image.licenses="MIT"
 
+# 可复现性由 base image 的 digest pin 承担；apk **不钉包版本**——alpine 稳定
+# 分支的仓库是滚动的（安全更新 -rN 递增、旧版即刻下架），钉具体版本等于给
+# 门禁装定时假红（2026-08-20 起 main CI 因 pin 过期连红，实证）。一个每隔
+# 几周必然假红的可复现性门禁，违反 ADR 0009「门禁必须自证有效」。
+# 只列顶层工具包：传递依赖（*-libs 等）由解析器自带，显式钉它们是上次碎的根源。
 RUN printf '%s\n' \
         "$APK_REPOSITORY/v3.22/main" \
         "$APK_REPOSITORY/v3.22/community" \
         > /etc/apk/repositories \
     && apk add --no-cache \
-        bash=5.2.37-r0 \
-        busybox-extras=1.37.0-r20 \
-        brotli-libs=1.1.0-r2 \
-        c-ares=1.34.8-r0 \
-        ca-certificates=20260611-r0 \
-        curl=8.14.1-r3 \
-        git=2.49.1-r0 \
-        git-init-template=2.49.1-r0 \
-        gmp=6.3.0-r3 \
-        jq=1.8.1-r0 \
-        libcurl=8.14.1-r3 \
-        libexpat=2.8.2-r0 \
-        libffi=3.4.8-r0 \
-        libgcc=14.2.0-r6 \
-        libidn2=2.3.7-r0 \
-        libncursesw=6.5_p20250503-r0 \
-        libpsl=0.21.5-r3 \
-        libucontext=1.3.2-r0 \
-        libunistring=1.3-r0 \
-        ncurses-terminfo-base=6.5_p20250503-r0 \
-        nghttp2-libs=1.69.0-r0 \
-        oniguruma=6.9.10-r0 \
-        pcre2=10.46-r0 \
-        readline=8.2.13-r1 \
-        ruby=3.4.4-r0 \
-        ruby-libs=3.4.4-r0 \
-        ruby-yaml=0.4.0-r1 \
-        yaml=0.2.5-r2 \
-        zstd-libs=1.5.7-r0 \
+        bash \
+        busybox-extras \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        ruby \
+        ruby-yaml \
     && addgroup -S -g 10001 vibedevops \
     && adduser -S -D -u 10001 -G vibedevops -h /home/vibedevops vibedevops
 

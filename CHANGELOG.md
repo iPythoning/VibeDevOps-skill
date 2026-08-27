@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.7.0 — 2026-08-27
+
+- **ADR 0011：验证闭环必须自治——人是 verifier 就是并行度上限**。前十个 ADR 解决的是同一件事：**怎么把代码安全送上生产**（变量路由 0006、无人值守 failover 0007、链路实测 0008、门禁自证 0009、接入对账 0010）。它们共享一个从未写下来的前提：**验证由人做**。把最近的真实故障按「谁完成了验证」重新归类，四件里有三件是「门禁绿着，而真相在别处」——CD 首跑红是人读 384 秒构建日志找到 `network:` 参数缺失；容器引擎卡死是人翻日志发现进程在等 GUI 对话框；可选依赖导致生产 502 是人回读源码发现类型注解在导入期求值。**再加一道门禁的收益在递减（已知错误正被逐个吃掉），而给 agent 一次验证能力的收益在递增——它对每个后续任务复用，而且可以并行。**
+- **能力层 `templates/verification/verify-web.sh`**：agent 自己打开页面、采 console/失败请求/性能与内存指标/截图，产出机器可判的证据 JSON，越界即非零退出（同时是门禁）。能力来自浏览器调试协议通道——实测 `cdp('Performance.getMetrics')` 可取 `JSHeapUsedSize`/`Nodes`/`Documents`，配 navigation timing 得首屏耗时。**`curl` 200 只证明服务器回了字节，证明不了页面能用。**
+- **该工具自身踩过绿色谎言并已修**：早期版本 `--url http://x` 打开一个无关错误页，因无 console 错误、无失败请求而报「✅ 验证通过」——缺的是「页面到底加载没加载」判据。现补 DOM 规模 + 主文档状态双判据，守卫测试锁死。诚实标注：主文档状态常因事件时序取不到（实测多为 0），真正兜底的是 DOM 规模判据。
+- **地图层 `feature-map.template.yaml` + `check-feature-map.sh`**：功能名→路由→组件→进入条件→验证方式→已知坑，让「一张截图」「某某页面坏了」能被机械翻译成可复现的操作序列。**过期的地图比没有地图更危险**（让 agent 自信地走错），故校验器进 PR 门禁。**尤其校验路由↔组件对应**：只验路由存在不够——路由表里同时有 `/messages` 与 `/inbox` 时，地图写错一个照样通过而 agent 会被带到另一个页面（写模板时本人当场踩中，校验器抓出）。
+- **技能测试层 `templates/skill-testing/`**（README + 可跑的 `run-skill-eval.js` workflow 脚本）：多 sub-agent 独立执行任务样本 → rubric 打分 → **两个模型交叉评分且分歧取低**（分歧说明 rubric 或任务描述不清，该改 fixture 而非 skill；累计 3 个即重写 rubric 维度）→ 与基线比对防退化（**基线只在人工确认后更新，自动更新基线等于没有基线**）。分三类属性测：触发准确性/执行正确性/结果质量——**只测结果质量是常见错误**，最常见的失败是根本没触发，而那时结果看着还正常。
+- **自动合并分级 `templates/ci/automerge-tiers.sh`**：按**可逆性**分档。T1 纯文档/测试/文案 → CI 绿即合；T2 有运行时影响 → CI 绿 + 门禁自证有效 + 实际操作产品的证据 + 部署侧自动回滚；**T3 不可逆或影响面超出可验证范围（迁移/密钥/生产编排/流水线自身/真钱/认证授权）→ 永远人工，不接受任何证据豁免**。混合改动按最危险的文件定档，**不被大量安全文件稀释**。实测：本仓与 clawops 最近两个 PR 都被正确判为 T3（都改了流水线自身）。
+- **诊断层 `templates/verification/capture-trace.sh`**：CPU trace 与 heap snapshot 按需采集，实测产出 681KB / 2,743 条 trace 事件与 32MB / 406,422 节点的堆快照，可直接拖进 DevTools 的 Performance / Memory 面板。**不进常态门禁**（单次快照数十 MB）。实现踩了两个真坑并记进注释：`Tracing` 绑在当前 target 上——先 `openOrReuseTab` 会换 target 导致 `Tracing.end` 报 "Tracing is not started"，正解是先开页再 start 再 reload；heredoc 是 ES module 上下文，`require('fs')` 与顶层 await 冲突，须用 `await import('node:fs')`。
+- **修一个会漏掉首屏错误的真 bug**：`verify-web.sh` 早期版本在导航**之后**才 `Network.enable`，而 CDP 只推送订阅之后的事件——首屏的 console 错误与失败请求全部漏掉。修正时序（先 enable、再导航、已开页面则 reload）后，同一个生产站点的 console 错误从 **0 变成 4**。这正是「构建绿、单测过、`curl` 有 HTML，却漏掉运行时 ReferenceError」那类事故的复发点。
+- **自动合并的前置门**：实测三个主力仓 `branches/main/protection` 全部 404、`rulesets` 全空——**零机械门**，CI 红也能点 Merge、谁都能直推 main 触发生产部署。**在这种仓上讨论自动合并等于在没有门的房子上装智能门锁**，故判定器内置前置检查（无保护即拒判档，退出码 30）。该检查自身也踩过同型坑：`gh api` 在 404 时把错误 JSON 打到 **stdout**，判据若写成「输出为空即无保护」就永远为假、门静默失效——改判实质字段并由守卫测试锁死。
+- **守卫测试 `scripts/test-verification.sh`**：feature-map 三类漂移各自转红、automerge 三档 + 混合不稀释、verify-web 缺依赖/非法输入被拒、workflow 脚本语法（按其顶层 return 约定包装后校验）。全部 PATH 替身，干净 CI 容器可跑。
+- 顺带：v1.6.0 的 `test-onboard.sh` 补进 AGENTS.md 验证基线（当时漏进清单）。
+
+
 ## v1.6.0 — 2026-08-22
 
 - **ADR 0010：仓库接入自治——「记得跑」不是机制，对账收敛才是**。托管 CI 账单死透后，每个新建仓库仍必撞「额度不足」0 步失败：模板路由 fallback 是 hosted（变量没人设）、failover「无 runner 不切」（没注册的仓是盲区）、「建仓后记得跑接入命令」是无主步骤（人和 agent 都会忘，仓库可从任何入口创建，事件钩子拦不全）。对策 = 把接入从事件驱动改成**状态收敛**：构建机 root 对账循环把「OWNER 名下每个有 workflows 的仓都有 runner + 路由变量」收敛成事实。

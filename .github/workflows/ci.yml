@@ -45,6 +45,10 @@ jobs:
             skills/vibedevops/scripts/test-reasonix-runtime.sh \
             skills/vibedevops/templates/build-gate/install-github-runner.sh \
             skills/vibedevops/templates/build-gate/onboard-reconcile.sh \
+            skills/vibedevops/templates/verification/verify-web.sh \
+            skills/vibedevops/templates/verification/capture-trace.sh \
+            skills/vibedevops/templates/verification/check-feature-map.sh \
+            skills/vibedevops/templates/ci/automerge-tiers.sh \
             skills/vibedevops/templates/build-gate/onboard-repo.sh \
             skills/vibedevops/templates/ci/runner-failover.sh \
             skills/vibedevops/templates/ci/cd-lane.sh \
@@ -64,6 +68,8 @@ jobs:
         run: ./skills/vibedevops/scripts/test-build-runner.sh
       - name: Test repo onboarding reconcile guardrails
         run: ./skills/vibedevops/scripts/test-onboard.sh
+      - name: Test verification autonomy guardrails
+        run: ./skills/vibedevops/scripts/test-verification.sh
       - name: Test container build mirror fallback
         run: ./skills/vibedevops/scripts/test-container-build.sh
       - name: Test image lifecycle guardrails

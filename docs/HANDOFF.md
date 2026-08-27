@@ -5,6 +5,41 @@
 
 ## 当前目标
 
+v1.7.0 验证自治（ADR 0011）已完成，PR #14 待合并。
+
+**四层交付物**（全部实测驱动，不是纸面模板）：
+- `templates/verification/verify-web.sh` — 常态门禁：打开页面采 console/失败请求/
+  性能内存/截图，越界非零退出。**修过一个会漏首屏错误的真 bug**（导航后才 enable，
+  CDP 只推订阅之后的事件）——修正后同一生产站点 console 错误从 0 变 4。
+- `templates/verification/capture-trace.sh` — 诊断：CPU trace（681KB/2743 事件）与
+  heap snapshot（32MB/406422 节点），可直接进 DevTools。不进常态门禁。
+- `templates/verification/feature-map.template.yaml` + `check-feature-map.sh` — 地图层，
+  含**路由↔组件对应**校验（写模板时本人把 /messages 与 /inbox 搞混，被校验器当场抓出）。
+- `templates/skill-testing/` — README + 可跑的 `run-skill-eval.js`（多 sub-agent +
+  rubric + 双模型交叉评分分歧取低 + 回归基线）。
+- `templates/ci/automerge-tiers.sh` — 按可逆性分三档，内置**分支保护前置门**
+  （实测三仓 main 全无保护，无保护即拒判档）。
+
+**已知坑（都写进了脚本注释）**：
+- ego-browser heredoc 是 ES module 上下文——`require` 与顶层 await 冲突，用 `await import`
+- `Tracing` 绑当前 target，先 `openOrReuseTab` 会换 target 致 `Tracing is not started`
+- `gh api` 404 时把错误 JSON 打到 **stdout**，「输出为空即无保护」的判据永远为假
+- ego-browser 的 `wait()` 单位是秒；`click` 必须传 `'@N'` 不能传数字
+- 本机代理/TUN 会在证据里混入 `ERR_TUNNEL_CONNECTION_FAILED`，别当站点问题
+
+**诚实的边界**：iOS 模拟器三重实测确认不可用（本机只有 Command Line Tools，无完整
+Xcode），移动端原生复现这条链在本环境是断的；heap 两次快照 diff / retainer path
+分析没有现成工具，要自己写解析。
+
+**下一步**：合并 #14 → 自动 Release v1.7.0 → 在自有仓落地第一份 `docs/feature-map.yaml`
+（建议从 PulseAgent 起，它的路由/i18n 结构最全）。
+
+## 上一版目标（v1.6.0，已发布）
+
+发布 v1.7.0：验证自治（ADR 0011）——把「人是唯一 verifier」这个并行度瓶颈拆掉。四层：能力层（verify-web.sh，浏览器调试协议采证，实测可取堆/节点/首屏）、地图层（feature-map + 校验器，含路由↔组件对应校验）、技能层（失败模式写成可执行 skill）、技能测试层（多 sub-agent + rubric + 双模型交叉评分分歧取低 + 回归基线）。自动合并按可逆性分三档，T3 不可逆改动永远人工。守卫测试 test-verification.sh 全绿。
+
+## 上一版目标（v1.6.0，已发布）
+
 发布 v1.6.0：仓库接入自治（ADR 0010）——把「新仓必撞额度死」从『记得跑接入命令』升级为构建机对账循环状态收敛。新模板 onboard-reconcile.sh（30min 对账，全程本机、不依赖入站通道）+ onboard-repo.sh（同一实现的单仓模式即时通道）+ service/timer + 守卫测试（含变异自证）。五条硬纪律全部有当日实战事故背书（.runner_migrated 残留 / 双通道互毒 / 裸奔空窗 / 只做加法 / 平台侧判定）。
 
 ## 上一版目标（v1.3.0，已发布）

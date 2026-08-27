@@ -13,4 +13,5 @@
 - 大陆节点优先 `m.daocloud.io/docker.io/...@sha256:...`，单路径有界超时后切上游；所有 fallback 必须固定同一 digest。Xserver 的 Docker build 和临时容器显式使用 `--network host`，不得重启平台托管的 Docker daemon。
 - 每次健康部署后只清理未引用旧镜像和过期 build cache。current、last-known-good、production/rollback tag 及其 provenance/SBOM 引用闭包必须保护；禁止 force 删除镜像，禁止自动删除 volume。
 - 所有长期凭据使用最小权限；CI 优先短期身份。密钥不得进入 Git、argv、日志、镜像层或服务文件。
+- **验证闭环必须自治（ADR 0011）**：agent 必须能自己运行产品、操作界面、采集运行时证据（console/失败请求/性能与内存），而不是靠 `curl` 状态码猜；仓库维护 `docs/feature-map.yaml`（功能→路由→组件→进入条件→验证方式→已知坑）并由 PR 门禁校验其不过期；每个被发现的失败模式写成可执行 skill 而非只写进交接文档；skill 像代码一样被测（多 sub-agent + rubric + 双模型交叉评分分歧取低 + 回归基线）。**人是 verifier 就是并行度上限**——自动合并按可逆性分档，不可逆改动（迁移/密钥/生产编排/流水线自身/真钱/认证授权）永远人工。
 <!-- VIBEDEVOPS:MANAGED-DEVOPS:END -->

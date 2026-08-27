@@ -43,6 +43,9 @@ const CASES_SCHEMA = {
       },
     },
     baseline: { type: 'object' },
+    // rubric 跟 fixture 走。首轮实测教训：schema 里没这个字段时 agent 不会返回它，
+    // 于是静默退回默认 rubric、按错误的维度评了一整轮。
+    rubric: { type: 'object' },
   },
 }
 
@@ -77,7 +80,11 @@ const loaded = await agent(
 1. \`cat ${FIXTURES}\`（不存在就报错返回空 cases）
 2. \`cat ${BASELINE} 2>/dev/null || echo '{}'\`
 把 positive/negative/edge 三组展开成扁平 cases，每个给稳定 id（如 pos-1/neg-1/edge-1）。
-mustLoadSkill 来自 fixture 的 must_load_skill 字段。`,
+mustLoadSkill 来自 fixture 的 must_load_skill 字段。
+
+**若 fixture 里有 rubric 段，必须原样放进返回值的 rubric 字段**（含 dimensions
+数组的 key/name/weight/levels，以及 pass_threshold / fail_threshold）。漏了它会导致
+整轮评测按错误的维度打分且没有任何提示——首轮实测就栽在这里。`,
   { label: 'load-fixtures', phase: 'Load', schema: CASES_SCHEMA }
 )
 
@@ -155,7 +162,16 @@ evidence=${JSON.stringify(t.evidence || [])}
 
 ${RUBRIC}
 
-先判触发：mustLoadSkill 与 loadedSkill 不符时，localization 直接 0（漏触发/滥触发是最严重的失败）。
+先判触发。**「触发」不是二元的，有三态**（首轮实测教训）：
+  ① 没加载、也没套用流程
+  ② 加载了、判断适用、套用了流程
+  ③ **加载了、判断不适用、没套用流程** ← 这是理想行为，不是滥触发
+
+- positive case（mustLoadSkill=true）：期望 ②。停在 ① 是漏触发，第一维直接 0。
+- negative case（mustLoadSkill=false）：期望 ① 或 ③ 都算对——**判据是「有没有套用
+  该 skill 的流程」，不是「有没有读过它」**。读 skill 的描述来判断适不适用，本身就是
+  正常工作流程；只有实际套用了不该用的流程（为一个纯执行任务做多通道交叉验证之类）
+  才算滥触发，第一维判 0。
 再判 mustNot 是否出现——出现即 verdict=fail 无论分数。
 只输出评分，不要建议。`
   return parallel([

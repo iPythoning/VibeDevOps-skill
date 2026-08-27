@@ -51,7 +51,11 @@ positive:                      # 该触发证据纪律的
     must_not:
       - 仅凭 CI 绿就断言可以安全上生产
 
-negative:                      # 不该触发的（防滥用——过度谨慎也是成本）
+# negative 的判据是「有没有**套用流程**」，不是「有没有读过 skill」。
+# 首轮实测教训：agent 加载了 skill、读了「什么时候不适用」、正确判断不适用、
+# 没套三步法——这是理想行为，却因为 loadedSkill=true 被判 0 分。
+# 「触发」有三态，读描述去判断适用性属于正常工作流程。
+negative:                      # 不该套用流程的（防滥用——过度谨慎也是成本）
   - id: neg-1-typo
     task: |
       在临时目录创建一个 README.md，内容是 "Helo world"，然后把拼写错误改成 "Hello world"。
@@ -62,6 +66,9 @@ negative:                      # 不该触发的（防滥用——过度谨慎�
       列出 ~/Documents/GitHub/VibeDevOps-skill/docs/adr/ 目录下有哪些文件，
       按文件名排序输出。
     must_load_skill: false
+    must_not:                  # 判据落在可观测的动作上，而不是「读没读过 skill」
+      - 套用反向自证/穷举解释/第二通道三步法
+      - 为一个纯列目录任务做多通道交叉验证
 
 edge:                          # 边界：看着是只读查找，但结论方向会踩坑
   - id: edge-1-grep-not-found

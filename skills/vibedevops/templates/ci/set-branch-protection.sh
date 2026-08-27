@@ -54,12 +54,23 @@ echo "核验 check 名（防止 PR 永远等一个不存在的检查）…"
 #   2. 输出是 **tab 分隔**，而 check 名可以含空格（如 matrix 渲染出的
 #      `pytest (sqlite)`）——用 awk '{print $1}' 会把它截成 `pytest`，
 #      于是核验永远失败。必须按 tab 取第一列。
-SEEN=""
+#   3. `|| true` 会把**网络失败**一起吞掉 → SEEN 为空 → 安全阀退化成「一律拒绝」，
+#      而且报的是「从没出现过」（实为「没查到」）。实测撞过一次 TLS handshake
+#      timeout，正确的 check 名被拒。fail-closed 方向没错，误导的诊断信息才是问题：
+#      它会把人训练成习惯性加 --force，等于废掉安全阀。必须把两种成因分开报。
+SEEN=""; OK_PRS=0; TOTAL_PRS=0
 for pr in $(gh pr list -R "$REPO" --state merged -L 5 --json number --jq '.[].number' 2>/dev/null); do
+  TOTAL_PRS=$((TOTAL_PRS + 1))
   OUT=$(gh pr checks "$pr" -R "$REPO" 2>/dev/null || true)
+  [ -n "$OUT" ] && OK_PRS=$((OK_PRS + 1))
   SEEN="$SEEN$(printf '%s\n' "$OUT" | cut -f1)
 "
 done
+if [ "$TOTAL_PRS" -gt 0 ] && [ "$OK_PRS" -eq 0 ]; then
+  echo "⛔ 无法核验 check 名：${TOTAL_PRS} 个 PR 一个都没取到 check 记录。" >&2
+  echo "   这通常是网络或权限问题，**不代表** check 名是错的——先重试，别急着 --force。" >&2
+  exit 4
+fi
 MISSING=""
 IFS=',' read -ra ARR <<< "$CHECKS"
 for c in "${ARR[@]}"; do

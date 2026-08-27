@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.9 — 2026-08-27
+
+- **修掉安全阀的假阳性**：`|| true` 把**网络失败**和「check 名不存在」吞成同一个结果——实测撞上一次 TLS handshake timeout，正确的 check 名 `test` 被判成「从没出现过」。fail-closed 的方向没错，**误导的诊断信息才是真问题**：它会把人训练成习惯性加 `--force-unverified-checks`，等于把安全阀废掉。现在区分两种成因：一个 PR 都取不到 check 记录 → exit **4** +「无法核验，先重试别急着 --force」；取到了但没这个名字 → exit **3** +「从没出现过」。
+- **补上 `set-branch-protection.sh` 的守卫测试**（上一版发布时它一条守卫都没有——按 ADR 0009「门禁必须自证有效」，没被测过的门禁等于没有门禁，于是它的假阳性是靠生产撞出来的）。三条 case 覆盖三种成因：跑过的名字放行 / 没跑过的拒绝(3) / 取不到记录报无法核验(4)。
+- **第七个仓 wa-sdr-core 补上保护**（`test`）。此前设不了：它的 `runs-on` 漏 `fromJSON`，job 永远排队从不给结论，历史 PR 上没有任何 check 记录可作判据。PR#26 合并后 `test` 首次真实 SUCCESS，判据才成立——**修好路由是设保护的前置条件，不是并列项**。
+- 至此七个主力仓 `main` 全部有机械门，平台侧读回逐仓核验。
+
+
 ## v1.7.8 — 2026-08-27
 
 - **新增 `templates/ci/set-branch-protection.sh`**，并给六个主力仓装上了机械门（此前全部零保护——CI 红也能点 Merge、谁都能直推 main 触发生产部署）：PulseAgent / clawops / paibao-console / paibao-trade-crm / inbox-core / paibao-portal。配置取向是单人仓友好：要求 CI 通过、**不要求 review**、管理员可绕过（逃生门）、禁 force push。

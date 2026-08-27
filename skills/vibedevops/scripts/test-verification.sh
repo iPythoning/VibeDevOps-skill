@@ -198,4 +198,51 @@ if (ticks % 2 !== 0) { console.error('反引号不成对（'+ticks+' 个）—�
 " || { echo "FAIL: run-skill-eval.js 反引号不成对"; exit 1; }
 echo "  模板字符串反引号配对: OK"
 
+# ── 5. set-branch-protection 安全阀 ──
+# 上一版发布时这个脚本**一条守卫都没有**（ADR 0009：没被测过的门禁等于没有门禁），
+# 于是它的假阳性是靠生产上撞出来的。三条 case 对应三种成因，必须能被区分开。
+BP="$CI_T/set-branch-protection.sh"
+mkdir -p "$FIX/bp"
+mk_gh() {  # $1=checks 输出内容（空串模拟网络失败）
+  cat > "$TOOLS/gh" <<EOF
+#!/bin/bash
+case "\$1 \$2" in
+  "pr list") echo '11'; echo '12' ;;
+  "pr checks") printf '%b' "$1" ;;
+  "api "*) echo '{}' ;;
+  *) echo '{}' ;;
+esac
+exit 0
+EOF
+  chmod 755 "$TOOLS/gh"
+}
+
+# 5a. check 名确实跑过 → 放行（dry-run 到底）
+mk_gh 'test\tpass\t3s\thttp://x
+image\tpass\t1s\thttp://y'
+PATH="$TOOLS:$PATH" bash "$BP" --repo o/r --checks test --dry-run > "$FIX/bp/a.log" 2>&1 \
+  || { echo "FAIL: 跑过的 check 名被误拒"; cat "$FIX/bp/a.log"; exit 1; }
+
+# 5b. check 名从没跑过 → exit 3 拒绝（安全阀本体）
+set +e
+PATH="$TOOLS:$PATH" bash "$BP" --repo o/r --checks nonexistent --dry-run > "$FIX/bp/b.log" 2>&1
+B=$?
+set -e
+[ "$B" = "3" ] || { echo "FAIL: 未跑过的 check 名应 exit 3，实际 $B"; cat "$FIX/bp/b.log"; exit 1; }
+grep -q '从没出现过' "$FIX/bp/b.log" || { echo "FAIL: 缺「从没出现过」诊断"; exit 1; }
+
+# 5c. 一个 PR 都取不到 check（网络/权限失败）→ 必须报「无法核验」而不是「从没出现过」。
+# 实测撞过：TLS handshake timeout 把正确的 check 名判成不存在。fail-closed 没错，
+# 误导的诊断才是问题——它把人训练成习惯性 --force，等于废掉安全阀。
+mk_gh ''
+set +e
+PATH="$TOOLS:$PATH" bash "$BP" --repo o/r --checks test --dry-run > "$FIX/bp/c.log" 2>&1
+C=$?
+set -e
+[ "$C" = "4" ] || { echo "FAIL: 取不到 check 记录应 exit 4（区别于 3），实际 $C"; cat "$FIX/bp/c.log"; exit 1; }
+grep -q '无法核验' "$FIX/bp/c.log" || { echo "FAIL: 网络失败被误报成「从没出现过」"; cat "$FIX/bp/c.log"; exit 1; }
+grep -q '从没出现过' "$FIX/bp/c.log" && { echo "FAIL: 网络失败不该报「从没出现过」"; exit 1; }
+rm -f "$TOOLS/gh"
+echo "  分支保护安全阀（放行/拒绝/网络失败三分）: OK"
+
 echo "verification autonomy guardrails: OK"

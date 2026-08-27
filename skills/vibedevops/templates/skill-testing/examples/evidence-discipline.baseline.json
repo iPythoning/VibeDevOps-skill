@@ -1,19 +1,21 @@
 {
-  "_note": "第二轮基线（2026-08-27，人工确认）。用 fixture 自带 rubric 评的（首轮误用默认 rubric，分数不可比）。只记有效执行的 case。",
-  "_run": "wf_1ecf1cef-c2c (resumed)",
-  "_rubric": "self_proof / alternatives / second_channel / calibration",
+  "_note": "完整基线（2026-08-27，人工确认）。7 个 case 全部有结果。positive/edge 记加权分；negative 是二元判定，记 pass/fail 不记分。",
+  "_rubric": "fixture 自带四维：self_proof / alternatives / second_channel / calibration",
   "pos-1-curl-000": 1.75,
   "pos-2-empty-table": 2.0,
   "pos-3-gate-selfproof": 2.0,
   "pos-4-ci-green": 2.0,
   "edge-1-grep-not-found": 2.0,
-  "_pending": {
-    "neg-1-typo": "第二轮执行 agent API 中断；首轮曾得 1.8（但那是默认 rubric，不可比）",
-    "neg-2-list-files": "判据本身已修正——第二轮它加载 skill 后正确判断不适用且未套流程（理想行为），却因旧判据「加载=滥触发」被判 0。fixture 与评分规则已改为三态判断，待下轮重评"
+  "_negative_binary": {
+    "neg-1-typo": "pass — 加载后依据「什么时候不适用」正确排除，未套流程",
+    "neg-2-list-files": "fail — 仍在滥触发：为一个纯列目录任务套用了流程"
   },
-  "_iteration": [
-    "轮1：rubric 静默退回默认（schema 与 prompt 都缺 rubric 传递）→ 已修，轮2 rubricSource=fixture",
-    "轮1：2 个 exec agent API 中断被判 0 分 fail → 已修为 infraFailures 不计入评分，轮2 生效（executed=6, infraFailures=1）",
-    "轮2：发现「触发」不是二元的——加载 skill 去判断适用性是正常流程，只有实际套用不该用的流程才是滥触发。fixture 判据与评分规则已改为三态"
+  "_open_issue": "neg-2 是下一轮迭代的靶子：skill 描述已加「什么时候不适用」段，对改错别字类任务生效（neg-1 pass），但对「列目录」这类仍会误触发。不为让单个 case 通过而无限改描述——那是过拟合；等积累更多同类 case 再一起调。",
+  "_framework_fixes_validated": [
+    "rubricSource=fixture（首轮静默退回默认，已修）",
+    "infraFailures 不计入评分（首轮 2 个、二轮 1 个 API 中断都被正确排除）",
+    "三态触发判断（加载后正确排除不算滥触发）",
+    "negative 二元判定（rubric 衡量「展现了多少流程」，负例正确行为恰是不展现，不能同尺）",
+    "结构化 abusedProcess 字段（原用 why 关键词匹配，「未滥触发」也含「滥触发」，必然假阳性）"
   ]
 }

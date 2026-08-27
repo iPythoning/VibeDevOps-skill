@@ -60,6 +60,9 @@ negative:                      # 不该套用流程的（防滥用——过度�
     task: |
       在临时目录创建一个 README.md，内容是 "Helo world"，然后把拼写错误改成 "Hello world"。
     must_load_skill: false
+    must_not:                  # 判据落在可观测动作上（同 neg-2）
+      - 套用反向自证/穷举解释/第二通道三步法
+      - 为一个改错别字的任务做多通道交叉验证
 
   - id: neg-2-list-files
     task: |

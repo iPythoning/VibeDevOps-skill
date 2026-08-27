@@ -186,4 +186,16 @@ new (Object.getPrototypeOf(async function(){}).constructor)('args','agent','para
 " || { echo "FAIL: run-skill-eval.js 语法错误"; exit 1; }
 echo "  skill 评测脚本语法: OK"
 
+# 模板字符串里混入反引号会提前终止它——本次开发撞了三次（每次都是往 prompt
+# 里写 markdown code span）。语法检查能抓到，但报错信息指向被截断处、很难读，
+# 所以这里单独给一条明确的失败信息。
+node -e "
+const fs=require('fs');
+const src=fs.readFileSync('$ROOT/skills/vibedevops/templates/skill-testing/run-skill-eval.js','utf8');
+// 统计非转义反引号数：模板字符串成对，奇数即有一个孤儿
+const ticks=(src.match(/(?<!\\\\)\`/g)||[]).length;
+if (ticks % 2 !== 0) { console.error('反引号不成对（'+ticks+' 个）——模板字符串里混了 code span？'); process.exit(1); }
+" || { echo "FAIL: run-skill-eval.js 反引号不成对"; exit 1; }
+echo "  模板字符串反引号配对: OK"
+
 echo "verification autonomy guardrails: OK"

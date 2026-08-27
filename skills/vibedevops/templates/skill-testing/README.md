@@ -42,6 +42,26 @@ edge:                            # 边界：模糊输入
       - 向用户澄清或从截图文案反查 i18n key
 ```
 
+## rubric 跟 fixture 走，不写死在脚本里
+
+**不同 skill 该被评的维度完全不同**——写死在评测脚本里，这个框架就只能测一条 skill
+（首次真实使用时立刻暴露）。所以 rubric 写在 fixture 文件的 `rubric:` 段：
+
+```yaml
+rubric:
+  dimensions:
+    - key: self_proof          # 与打分输出的 dimensions key 对应
+      name: 反向自证
+      weight: 0.3
+      levels: ["0：…", "1：…", "2：…"]
+  pass_threshold: 1.5
+  fail_threshold: 1.2
+```
+
+没写就退回默认 rubric。**真实示例见 `examples/`**：`evidence-discipline` 这条 skill
+的完整 fixture（7 case：4 正 2 反 1 边界）+ 它对应的 SKILL.md——它是本框架的
+第一个真实用例，也是「失败模式写成可执行 skill」的第一个产物。
+
 ## rubric 样例（前端 bug 复现 skill）
 
 | 维度 | 0 分 | 1 分 | 2 分 | 权重 |

@@ -69,7 +69,27 @@ esac
 EOF
   chmod 755 "$TOOLS/gh"
 }
-tier_of() { PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1; echo $?; }
+tier_of() { PATH="$TOOLS:$PATH" AUTOMERGE_SKIP_PROTECTION_CHECK=1 "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1; echo $?; }
+
+# 前置门：gh api 404 时会把错误 JSON 打到 stdout——判据若写成「输出为空即无保护」
+# 就永远为假、门静默失效（本人实测踩中）。这里 mock 出真实的 404 形态，必须判 30。
+cat > "$TOOLS/gh" <<'GHEOF'
+#!/bin/bash
+case "$*" in
+  # 真实 gh：404 时错误 JSON 走 stdout；带 --jq 时过滤器作用其上、提不到字段即空输出。
+  # 两种形态都 mock，才能证明判据用的是实质字段而不是「输出是否为空」。
+  *"branches/main/protection"*--jq*|*--jq*"branches/main/protection"*) exit 0 ;;
+  *"branches/main/protection"*) echo '{"message":"Branch not protected","status":"404"}'; exit 0 ;;
+  *rulesets*) echo 0 ;;
+  *"--json files"*) echo 'README.md' ;;
+  *) echo '{}' ;;
+esac
+GHEOF
+chmod 755 "$TOOLS/gh"
+PROT_CODE=0
+PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1 || PROT_CODE=$?
+[ "$PROT_CODE" = "30" ] || { echo "FAIL: 无分支保护时应判 30，实际 $PROT_CODE"; exit 1; }
+echo "  automerge 前置门: OK（无分支保护即拒判档）"
 
 mk_gh 'README.md
 docs/HANDOFF.md
@@ -100,6 +120,16 @@ fi
 if "$V/verify-web.sh" --url not-a-url 2>/dev/null; then echo "FAIL: 非法 URL 应被拒"; exit 1; fi
 if "$V/verify-web.sh" 2>/dev/null; then echo "FAIL: 缺 --url 应被拒"; exit 1; fi
 echo "  verify-web 参数守卫: OK"
+
+# capture-trace 同款参数守卫
+if env PATH=/usr/bin:/bin "$V/capture-trace.sh" --url https://example.com >/dev/null 2>&1; then
+  echo "FAIL: capture-trace 缺 ego-browser 时应非零退出"; exit 1
+fi
+if "$V/capture-trace.sh" --url https://x.com --mode bogus >/dev/null 2>&1; then
+  echo "FAIL: 非法 --mode 应被拒"; exit 1
+fi
+if "$V/capture-trace.sh" --mode trace >/dev/null 2>&1; then echo "FAIL: 缺 --url 应被拒"; exit 1; fi
+echo "  capture-trace 参数守卫: OK"
 
 # ── 4. skill 评测脚本语法（workflow 约定：顶层 return 合法，包一层验）──
 node -e "

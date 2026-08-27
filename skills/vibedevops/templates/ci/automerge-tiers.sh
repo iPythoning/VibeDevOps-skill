@@ -11,7 +11,7 @@
 # T3 是**硬边界**：自动化的是「确认功能是否成立」，不是「替人承担不可逆后果」。
 #
 # 用法：automerge-tiers.sh --pr 123 --repo owner/name [--json]
-# 退出码：0=T1  10=T2  20=T3  2=用法错误
+# 退出码：0=T1  10=T2  20=T3  30=仓库无分支保护（前提不成立）  2=用法错误
 set -euo pipefail
 
 PR=""; REPO=""; JSON=0
@@ -26,6 +26,25 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$PR" ] && [ -n "$REPO" ] || { echo "用法: --pr N --repo owner/name" >&2; exit 2; }
 command -v gh >/dev/null 2>&1 || { echo "需要 gh CLI" >&2; exit 2; }
+
+# ── 前置门：没有分支保护，自动合并就是空中楼阁 ──
+# 实测过的真实状态：三个仓 GET /branches/main/protection 全 404、rulesets 全空——
+# 也就是 CI 红也能点 Merge、谁都能直推 main 触发生产部署。**在这种仓上讨论
+# 「让 agent 自动合并」是在没有门的房子上装智能门锁。** 先有机械门，再谈自动化。
+if [ "${AUTOMERGE_SKIP_PROTECTION_CHECK:-0}" != "1" ]; then
+  # 判据不能写成「输出为空即无保护」——gh api 在 404 时把错误 JSON 打到 **stdout**
+  # （实测 149 字节的 {"message":"Branch not protected",...}），那样判据永远为假、
+  # 这道门静默失效。要判实质字段：拿得到 required_status_checks 才算有保护。
+  PROT=$(gh api "repos/$REPO/branches/main/protection" --jq '.required_status_checks.strict // empty' 2>/dev/null || true)
+  RULES=$(gh api "repos/$REPO/rulesets" --jq 'length' 2>/dev/null || echo 0)
+  case "$RULES" in ''|*[!0-9]*) RULES=0 ;; esac
+  if [ -z "$PROT" ] && [ "$RULES" = "0" ]; then
+    echo "⛔ $REPO 的 main 没有任何分支保护（protection 404 且 rulesets 空）。" >&2
+    echo "   自动合并的前提是「CI 红不能合、不能直推 main」由平台强制，而不是靠自觉。" >&2
+    echo "   先设保护规则；确认要在无保护仓上评估分档，设 AUTOMERGE_SKIP_PROTECTION_CHECK=1。" >&2
+    exit 30
+  fi
+fi
 
 FILES=$(gh pr view "$PR" -R "$REPO" --json files --jq '.files[].path' 2>/dev/null || true)
 [ -n "$FILES" ] || { echo "取不到 PR 文件清单" >&2; exit 2; }

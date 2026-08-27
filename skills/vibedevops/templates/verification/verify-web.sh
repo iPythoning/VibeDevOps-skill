@@ -49,10 +49,18 @@ const task = await useOrCreateTaskSpace('verify-web ${LABEL}');
 const consoleErrors = [];
 const failedRequests = [];
 let mainStatus = 0;
+// 时序是关键：CDP 只推送 **订阅之后** 的事件。先开标签页再 enable，首屏的
+// console 错误与网络请求全部漏掉——「构建绿、单测过、curl 有 HTML，却漏掉运行时
+// ReferenceError」正是这么来的。所以：先 enable，再导航；已开着的页面则 reload
+// 一次让首屏事件重新流过订阅。
 await cdp('Runtime.enable').catch(() => {});
+await cdp('Log.enable').catch(() => {});
 await cdp('Network.enable').catch(() => {});
+const before = await currentTab().catch(() => null);
 await openOrReuseTab('${URL}', { wait: true, timeout: 30 });
+if (before) { await cdp('Page.reload', { ignoreCache: false }).catch(() => {}); }
 await waitForLoad().catch(() => {});
+await wait(1).catch(() => {});   // wait() 单位是秒——写成毫秒会挂到超时
 // drainEvents 收页面异步事件（导航/网络），是失败请求与运行时报错的来源
 const events = await drainEvents().catch(() => []);
 for (const e of (events || [])) {
@@ -60,6 +68,7 @@ for (const e of (events || [])) {
   const p = e && (e.params || e.payload) || {};
   if (m.includes('exceptionThrown')) consoleErrors.push(JSON.stringify(p).slice(0, 300));
   if (m.includes('consoleAPICalled') && p.type === 'error') consoleErrors.push(JSON.stringify(p.args || p).slice(0, 300));
+  if (m.includes('entryAdded') && p.entry && p.entry.level === 'error') consoleErrors.push((p.entry.text || '').slice(0, 300));
   if (m.includes('loadingFailed')) failedRequests.push((p.errorText || 'failed') + ' ' + (p.type || ''));
   if (m.includes('responseReceived') && p.response) {
     if (p.type === 'Document' && !mainStatus) mainStatus = p.response.status;

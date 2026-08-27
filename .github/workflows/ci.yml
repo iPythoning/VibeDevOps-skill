@@ -46,6 +46,7 @@ jobs:
             skills/vibedevops/templates/build-gate/install-github-runner.sh \
             skills/vibedevops/templates/build-gate/onboard-reconcile.sh \
             skills/vibedevops/templates/verification/verify-web.sh \
+            skills/vibedevops/templates/verification/capture-trace.sh \
             skills/vibedevops/templates/verification/check-feature-map.sh \
             skills/vibedevops/templates/ci/automerge-tiers.sh \
             skills/vibedevops/templates/build-gate/onboard-repo.sh \

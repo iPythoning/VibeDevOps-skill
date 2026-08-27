@@ -89,7 +89,23 @@ chmod 755 "$TOOLS/gh"
 PROT_CODE=0
 PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1 || PROT_CODE=$?
 [ "$PROT_CODE" = "30" ] || { echo "FAIL: 无分支保护时应判 30，实际 $PROT_CODE"; exit 1; }
-echo "  automerge 前置门: OK（无分支保护即拒判档）"
+# 反向：strict=false 的**正常保护**必须被认出来（jq `//` 对 false 走 alternative
+# 的坑，会把正常保护误判成无保护——同型第三次，锁死）
+cat > "$TOOLS/gh" <<'GHEOF'
+#!/bin/bash
+case "$*" in
+  *"branches/main/protection"*--jq*|*--jq*"branches/main/protection"*)
+    echo 'https://api.github.com/repos/o/r/branches/main/protection' ;;
+  *rulesets*) echo 0 ;;
+  *"--json files"*) echo 'README.md' ;;
+  *) echo '{}' ;;
+esac
+GHEOF
+chmod 755 "$TOOLS/gh"
+PROT_OK=0
+PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1 || PROT_OK=$?
+[ "$PROT_OK" = "0" ] || { echo "FAIL: 有分支保护时应正常判档（T1=0），实际 $PROT_OK"; exit 1; }
+echo "  automerge 前置门: OK（无保护拒判档 / 有保护放行，含 strict=false 形态）"
 
 mk_gh 'README.md
 docs/HANDOFF.md

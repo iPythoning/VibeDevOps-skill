@@ -111,4 +111,20 @@ grep -q 'config ' "$CALLS" && { echo "FAIL: only-mode registered something"; exi
 grep -qE 'POST .*/repo-a/' "$CALLS" && { echo "FAIL: only-mode touched repo-a"; exit 1; }
 [ "$(grep -c 'POST .*/repo-b/actions/variables$' "$CALLS")" = "1" ] || { echo "FAIL: only-mode repo-b vars"; exit 1; }
 
+# ── 轮 3：重注册一个「目录里有旧配置」的仓 ──
+# rsync 的 --exclude 只是不从源复制，不会删目标已有的同名文件。旧 .runner 留着
+# 会让 config.sh 报 already configured 而失败，然后目录被删、单元无限 activating，
+# 该仓从此没有 runner——实测两个仓栽在这里。
+: > "$CALLS"
+mkdir -p "$RUNNERS/repo-a"
+printf '{"gitHubUrl":"https://github.com/testowner/repo-a"}' > "$RUNNERS/repo-a/.runner"
+printf 'stale' > "$RUNNERS/repo-a/.credentials"
+printf 'stale' > "$RUNNERS/repo-a/.runner_migrated"
+run_reconcile env ONBOARD_ONLY_REPO=repo-a
+for f in .runner .credentials .runner_migrated; do
+  [ -f "$RUNNERS/repo-a/$f" ] && { echo "FAIL: 注册前未清掉旧配置 $f（config.sh 会报 already configured）"; exit 1; }
+done
+grep -q 'config .*repo-a' "$CALLS" || { echo "FAIL: 清理后应能重新注册"; exit 1; }
+echo "  重注册清理旧配置: OK"
+
 echo "onboard reconcile guardrails: OK"

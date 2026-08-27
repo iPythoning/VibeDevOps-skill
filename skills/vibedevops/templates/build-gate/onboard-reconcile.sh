@@ -112,7 +112,15 @@ for REPO in $REPOS; do
   if [ "${HAVE:-0}" = "0" ]; then
     SLUG=$(echo "$REPO" | tr '[:upper:]' '[:lower:]')
     DIR="$RUNNERS_DIR/$SLUG"
-    TEMPLATE=$(ls -d "$RUNNERS_DIR"/*/ 2>/dev/null | head -1)
+    # 模板不能是目标自己——按字母序取第一个时很容易选中它（rsync 自己到自己），
+    # 而且要挑一个「配置齐全」的目录当模板：只有 run.sh + config.sh 齐的才算数。
+    TEMPLATE=""
+    for CAND in "$RUNNERS_DIR"/*/; do
+      [ -d "$CAND" ] || continue
+      case "$CAND" in *"/$SLUG/") continue ;; esac
+      [ -x "$CAND/config.sh" ] && [ -x "$CAND/run.sh" ] || continue
+      TEMPLATE="$CAND"; break
+    done
     if [ -z "$TEMPLATE" ]; then log "$REPO: FAIL no template runner dir under $RUNNERS_DIR"; continue; fi
     REG=$(gh_api -X POST "$API/repos/$OWNER/$REPO/actions/runners/registration-token" | jq -r .token)
     if [ -z "$REG" ] || [ "$REG" = "null" ]; then log "$REPO: FAIL registration-token"; continue; fi
@@ -120,6 +128,13 @@ for REPO in $REPOS; do
     rsync -a --delete \
       --exclude '.runner*' --exclude '.credentials*' --exclude '.env' --exclude '.path' \
       --exclude '_work' --exclude '_diag' "$TEMPLATE" "$DIR/"
+    # rsync 的 --exclude 只是「不从源复制」，**不会删掉目标里已有的同名文件**
+    # （--delete 默认也不删 excluded 项，那要 --delete-excluded）。于是重注册一个
+    # 曾经注册过的仓时，旧的 .runner 还在，config.sh 直接报 already configured
+    # 并失败，紧接着 rm -rf 把整个目录删掉——单元指向不存在的路径无限 activating，
+    # 该仓从此没有 runner，一旦触发 CI 就撞额度死。实测两个仓栽在这里。
+    # ADR 里写了「注册前清理」，但代码里只 exclude 没真删——文档写了、代码没做。
+    rm -f "$DIR"/.runner* "$DIR"/.credentials* "$DIR"/.env "$DIR"/.path 2>/dev/null || true
     chown -R "$RUNNER_USER:$RUNNER_USER" "$DIR"
     if (cd "$DIR" && runuser -u "$RUNNER_USER" -- env \
         HTTPS_PROXY="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" \
@@ -133,6 +148,12 @@ for REPO in $REPOS; do
     else
       log "$REPO: FAIL config.sh"
       rm -rf "$DIR"   # 半配置残留会毒化下一轮，整目录重来
+      # 单元也要清：只删目录会留下一个指向不存在路径的单元无限 activating，
+      # 而 systemd 状态是 activating（既不是 active 也不是 failed），巡检容易漏掉。
+      systemctl stop "github-actions-$SLUG.service" 2>/dev/null || true
+      systemctl disable "github-actions-$SLUG.service" 2>/dev/null || true
+      rm -f "$UNIT_DIR/github-actions-$SLUG.service" 2>/dev/null || true
+      systemctl daemon-reload 2>/dev/null || true
       continue
     fi
   fi

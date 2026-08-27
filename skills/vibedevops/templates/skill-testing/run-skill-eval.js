@@ -43,6 +43,9 @@ const CASES_SCHEMA = {
       },
     },
     baseline: { type: 'object' },
+    // rubric 跟 fixture 走。首轮实测教训：schema 里没这个字段时 agent 不会返回它，
+    // 于是静默退回默认 rubric、按错误的维度评了一整轮。
+    rubric: { type: 'object' },
   },
 }
 
@@ -77,7 +80,11 @@ const loaded = await agent(
 1. \`cat ${FIXTURES}\`（不存在就报错返回空 cases）
 2. \`cat ${BASELINE} 2>/dev/null || echo '{}'\`
 把 positive/negative/edge 三组展开成扁平 cases，每个给稳定 id（如 pos-1/neg-1/edge-1）。
-mustLoadSkill 来自 fixture 的 must_load_skill 字段。`,
+mustLoadSkill 来自 fixture 的 must_load_skill 字段。
+
+**若 fixture 里有 rubric 段，必须原样放进返回值的 rubric 字段**（含 dimensions
+数组的 key/name/weight/levels，以及 pass_threshold / fail_threshold）。漏了它会导致
+整轮评测按错误的维度打分且没有任何提示——首轮实测就栽在这里。`,
   { label: 'load-fixtures', phase: 'Load', schema: CASES_SCHEMA }
 )
 

@@ -30,13 +30,75 @@ command -v python3 >/dev/null 2>&1 || { echo "❌ 需要 python3" >&2; exit 3; }
 
 python3 - "$MAP" "$STRICT" << 'PYEOF'
 import json, os, re, sys
-try:
-    import yaml
-except ImportError:
-    print("❌ 需要 pyyaml（pip install pyyaml）", file=sys.stderr); sys.exit(3)
+def _load_map(path):
+    """优先 pyyaml；没有就用针对本 schema 的极简解析器。
+
+    门禁不该因为环境缺个第三方库就红——构建机上常常只有 python3 没有 pip
+    （实测：self-hosted runner 上 `pip: command not found`，这道门禁首跑即挂）。
+    feature map 的结构是我们自己定义的受控子集，够用正则解析：
+    meta 的标量与列表、features 的条目字段。**不是通用 YAML 解析器**，
+    只认模板里出现的形态；结构复杂化时请装 pyyaml。
+    """
+    # FEATURE_MAP_PARSER=builtin 强制走内置解析器——守卫测试要覆盖两条路径，
+    # 否则降级路径永远不被执行，出问题时才第一次跑（ADR 0009 同款）。
+    if os.environ.get("FEATURE_MAP_PARSER") != "builtin":
+        try:
+            import yaml
+            return yaml.safe_load(open(path, encoding="utf-8")), "pyyaml"
+        except ImportError:
+            pass
+    import re as _re
+    text = open(path, encoding="utf-8").read()
+    meta, features, cur = {}, [], None
+    section = None
+
+    def _scalar(v):
+        v = v.strip()
+        if v.startswith("[") and v.endswith("]"):
+            return [x.strip().strip("'\"") for x in v[1:-1].split(",") if x.strip()]
+        return v.strip("'\"")
+
+    for raw in text.split("\n"):
+        line = raw.split(" #")[0].rstrip() if " #" in raw else raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("meta:"):
+            section = "meta"; continue
+        if line.startswith("features:"):
+            section = "features"; continue
+        if line.startswith("lookup_flow:") or (line[:1] not in " -" and line.endswith(":")):
+            section = None if not line.startswith(("meta:", "features:")) else section
+            continue
+        if section == "meta":
+            mm = _re.match(r"^  (\w+):\s*(.*)$", line)
+            if mm:
+                k, v = mm.group(1), mm.group(2)
+                meta[k] = _scalar(v) if v else []
+                meta["_last"] = k
+            else:
+                li = _re.match(r"^\s+-\s+(.*)$", line)
+                if li and isinstance(meta.get(meta.get("_last")), list):
+                    meta[meta["_last"]].append(_scalar(li.group(1)))
+        elif section == "features":
+            fm = _re.match(r"^  -\s+(\w+):\s*(.*)$", line)
+            if fm:
+                cur = {fm.group(1): _scalar(fm.group(2))}
+                features.append(cur); continue
+            km = _re.match(r"^    (\w+):\s*(.*)$", line)
+            if km and cur is not None:
+                k, v = km.group(1), km.group(2)
+                cur[k] = _scalar(v) if v else []
+                cur["_last"] = k; continue
+            li = _re.match(r"^\s+-\s+(.*)$", line)
+            if li and cur is not None and isinstance(cur.get(cur.get("_last")), list):
+                cur[cur["_last"]].append(_scalar(li.group(1)))
+    meta.pop("_last", None)
+    for f in features:
+        f.pop("_last", None)
+    return {"meta": meta, "features": features}, "builtin"
 
 map_path, strict = sys.argv[1], sys.argv[2] == "1"
-m = yaml.safe_load(open(map_path))
+m, parser = _load_map(map_path)
 meta, features = m.get("meta") or {}, m.get("features") or []
 fails, warns = [], []
 
@@ -136,5 +198,6 @@ if fails:
     sys.exit(1)
 if strict and warns:
     print(f"\n--strict：{len(warns)} 个路由未入图", file=sys.stderr); sys.exit(1)
-print(f"✅ feature map 一致：{len(features)} 个功能，路由/组件/i18n 前缀全部对得上")
+note = "" if parser == "pyyaml" else "（内置解析器，装 pyyaml 可获更严格校验）"
+print(f"✅ feature map 一致：{len(features)} 个功能，路由/组件/i18n 前缀全部对得上{note}")
 PYEOF

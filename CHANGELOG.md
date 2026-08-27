@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.2 — 2026-08-27
+
+- **`check-feature-map.sh` 去掉 pyyaml 硬依赖**。首次把门禁接进真实 CI 就挂了：self-hosted 构建机上只有 python3、**没有 pip**（`pip: command not found`，退出码 127）。**门禁不该因为环境缺个第三方库就红**——现改为有 pyyaml 用它、没有则用针对本 schema 的内置解析器（不是通用 YAML 解析器，只认模板里出现的形态）。
+- 降级路径由守卫测试覆盖（`FEATURE_MAP_PARSER=builtin` 钩子）：既验证它与 pyyaml 同判为通过，也验证它能抓到组件不匹配——**否则「解析出空数据于是没有错误」会是一种假绿**。降级路径不被测，就只会在出问题时第一次跑，这是 ADR 0009 同款。
+
+
 ## v1.7.1 — 2026-08-27
 
 - **修 `automerge-tiers.sh` 前置门的判据：jq 的 `//` 对 false 与 null 一视同仁**。原判据写成 `.required_status_checks.strict // empty`，而正常保护里 `strict` 常为 `false`——`false // empty` 返回 empty，于是**配置正确的仓被判成「无分支保护」而拒绝判档**。改取 `.url`（保护存在时必为非空字符串）。守卫测试补反向 case：有保护（含 strict=false 形态）必须正常放行。

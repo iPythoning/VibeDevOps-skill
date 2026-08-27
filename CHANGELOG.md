@@ -3,6 +3,8 @@
 ## v1.7.1 — 2026-08-27
 
 - **修 `automerge-tiers.sh` 前置门的判据：jq 的 `//` 对 false 与 null 一视同仁**。原判据写成 `.required_status_checks.strict // empty`，而正常保护里 `strict` 常为 `false`——`false // empty` 返回 empty，于是**配置正确的仓被判成「无分支保护」而拒绝判档**。改取 `.url`（保护存在时必为非空字符串）。守卫测试补反向 case：有保护（含 strict=false 形态）必须正常放行。
+- **修 `check-feature-map.sh` 两个实战暴露的缺陷**（在给 PulseAgent 建首份地图时踩到）：① 正则不跳 JSX 注释，把已下线、被注释掉的路由当成真路由，strict 模式误报「未入图」；② 顶层包装组件（`<Route element={<ProtectedRoute><Onboarding/></ProtectedRoute>}>`）只抓最外层，而包装组件常是内联函数、没有对应文件，导致那条路由**无论怎么填都过不了校验**。现改为先剥注释、再穿透已知包装组件取内层功能组件。守卫测试锁死两者。
+- **首份真实地图落地**：PulseAgent `docs/feature-map.yaml`，21 个功能全部带 known_traps，校验器 exit=0。建图过程本身就是价值证明——**抓出 7 处猜测错误**：5 个页面的 `i18n_prefix` 猜错（`credits`/`funnel` 等页面根本没有 i18n key，中英文硬编码）、外联的 API 前缀实际是 `/api/crm` 而非 `/api/outreach`、邀请码页面在 `/app/invitations` 但接口在 `/api/enterprise/invitation-codes`；另顺带发现 `CODEMAP.md` 把 `/app/credits` 写成了 `/app/credit`。
 - 这是「判据写错导致门静默失效」在本次发布里的**第三次同型复现**，三次形态各不相同、都很隐蔽：① 管道 `| tail` 吞掉退出码，让报错的门禁返回 0；② `gh api` 404 把错误 JSON 打到 stdout，让「输出为空即无保护」永远为假；③ jq `//` 把 false 当空。**共同点：门禁本身在运行、也打印了正确信息，只有那一行判据是错的。** 这正是 ADR 0009 要求「门禁必须自证有效」的原因——三次都是被反向变异测试抓出来的，没有一次是靠读代码发现的。
 
 

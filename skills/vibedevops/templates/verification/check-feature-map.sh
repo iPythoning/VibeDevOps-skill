@@ -46,13 +46,28 @@ fails, warns = [], []
 router = meta.get("router_file")
 routes_in_code = set()
 route_to_element = {}
+# 包装组件不是功能组件：<Route element={<ProtectedRoute><Onboarding/></ProtectedRoute>}>
+# 只抓最外层会得到 ProtectedRoute，而它往往是内联函数、没有对应文件，
+# 于是这条路由无论怎么填都过不了校验（实战中真的卡住了 onboarding）。
+WRAPPERS = {"ProtectedRoute", "PrivateRoute", "RequireAuth", "Suspense",
+            "ErrorBoundary", "Layout", "AuthGuard", "Guard"}
+
 if router and os.path.exists(router):
     src = open(router, encoding="utf-8", errors="ignore").read()
+    # 先去掉 JSX 注释：注释掉的路由不是路由（实战中把已下线的 {/* <Route path="geo" */}
+    # 误报成「未入图」）。也去掉行注释与块注释。
+    src = re.sub(r'\{\s*/\*.*?\*/\s*\}', '', src, flags=re.S)
+    src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
+    src = re.sub(r'^\s*//.*$', '', src, flags=re.M)
     for raw in re.findall(r'path="([^"]*)"', src):
         routes_in_code.add("/" + raw.strip("/") if raw else "/")
     # <Route path="inbox" element={<Inbox />} /> → {/inbox: Inbox}
-    for raw, elem in re.findall(r'path="([^"]*)"\s+element=\{<\s*([A-Za-z0-9_]+)', src):
-        route_to_element["/" + raw.strip("/") if raw else "/"] = elem
+    # 外层是包装组件时继续往里取，直到拿到真正的功能组件
+    for raw, chain in re.findall(r'path="([^"]*)"\s+element=\{(.{0,400}?)\}\s*/?>', src, flags=re.S):
+        names = re.findall(r'<\s*([A-Za-z0-9_]+)', chain)
+        elem = next((n for n in names if n not in WRAPPERS), names[0] if names else None)
+        if elem:
+            route_to_element["/" + raw.strip("/") if raw else "/"] = elem
 elif router:
     fails.append(f"router_file 不存在: {router}")
 

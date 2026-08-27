@@ -1,0 +1,14 @@
+{
+  "_note": "首轮评测基线（2026-08-27，人工确认）。只记有效执行的 case——基础设施故障的不入基线，否则下次对比会拿故障当退化。",
+  "_run": "wf_1ecf1cef-c2c",
+  "pos-1-curl-000": 2.0,
+  "pos-3-gate-selfproof": 2.0,
+  "pos-4-ci-green": 2.0,
+  "neg-1-typo": 1.8,
+  "neg-2-list-files": 1.4,
+  "_pending": {
+    "pos-2-empty-table": "首轮执行 agent 因 API 中断无轨迹，未取得有效分数",
+    "edge-1-grep-not-found": "同上"
+  },
+  "_iteration": "neg-2 首轮 1.4（滥触发：纯 ls 任务却全程套三步法）→ 已收窄 skill 描述并加「不适用」段 → 复测 loadedSkill=false 且理由引用了新加的边界原文。下轮该 case 应 ≥1.5。"
+}

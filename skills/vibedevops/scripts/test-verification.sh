@@ -79,7 +79,15 @@ EOF
 # 注释里的路由不该出现在 strict 警告中
 STRICT_OUT=$(cd "$FIX/repo" && "$V/check-feature-map.sh" --map "$FIX/wrap.yaml" --strict 2>&1 || true)
 echo "$STRICT_OUT" | grep -q 'retired' && { echo "FAIL: 注释掉的路由不该被当成真路由"; exit 1; }
-echo "  feature-map 校验器: OK（一致通过 / 三类漂移各自转红 / 跳注释 / 穿透包装组件）"
+# 零依赖降级路径必须与 pyyaml 路径同判：构建机上常只有 python3 没有 pip
+# （实测 self-hosted runner `pip: command not found`，这道门禁首跑即挂）。
+# 降级路径若不被测，出问题时才第一次跑——ADR 0009 同款。
+(cd "$FIX/repo" && FEATURE_MAP_PARSER=builtin "$V/check-feature-map.sh" --map "$FIX/good.yaml" >/dev/null 2>&1) \
+  || { echo "FAIL: builtin 解析器应与 pyyaml 同判为通过"; exit 1; }
+if (cd "$FIX/repo" && FEATURE_MAP_PARSER=builtin "$V/check-feature-map.sh" --map "$FIX/bad-comp.yaml" >/dev/null 2>&1); then
+  echo "FAIL: builtin 解析器必须也能抓到组件不匹配（否则是解析出空数据的假绿）"; exit 1
+fi
+echo "  feature-map 校验器: OK（一致通过 / 三类漂移转红 / 跳注释 / 穿透包装 / 零依赖降级同判）"
 
 # ── 2. automerge 分级 ──
 mk_gh() { # $1=文件清单（换行分隔）

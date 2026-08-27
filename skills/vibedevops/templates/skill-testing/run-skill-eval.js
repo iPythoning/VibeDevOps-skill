@@ -63,13 +63,8 @@ const SCORE_SCHEMA = {
   required: ['caseId', 'dimensions', 'weighted', 'verdict'],
   properties: {
     caseId: { type: 'string' },
-    dimensions: {
-      type: 'object',
-      properties: {
-        localization: { type: 'number' }, reproduction: { type: 'number' },
-        evidence: { type: 'number' }, conclusion: { type: 'number' },
-      },
-    },
+    // 维度名由 fixture 的 rubric 决定，这里不写死
+    dimensions: { type: 'object', additionalProperties: { type: 'number' } },
     weighted: { type: 'number' },
     verdict: { type: 'string', enum: ['pass', 'fail'] },
     why: { type: 'string' },
@@ -113,7 +108,17 @@ const okTraces = traces.filter(Boolean)
 
 phase('Score')
 // 双模型独立评分：不给对方结果，分歧取低（分歧=rubric 或任务描述不清）
-const RUBRIC = `rubric（每维 0/1/2）：
+// rubric 优先用 fixture 自带的——写死在这里等于这个框架只能测一条 skill
+const fixtureRubric = loaded && loaded.rubric
+const PASS = (fixtureRubric && fixtureRubric.pass_threshold) || 1.5
+const FAILT = (fixtureRubric && fixtureRubric.fail_threshold) || 1.2
+const RUBRIC = fixtureRubric
+  ? `rubric（每维 0/1/2，按 key 输出到 dimensions）：\n` +
+    (fixtureRubric.dimensions || []).map(d =>
+      `- ${d.key}（${d.name}，权重 ${d.weight}）：${(d.levels || []).join("；")}`
+    ).join('\n') +
+    `\nweighted = 各维得分 × 权重之和；verdict: weighted>=${PASS} → pass，否则 fail`
+  : `rubric（每维 0/1/2）：
 - localization 定位（权重 .3）：0=靠猜/grep 关键词；1=读了代码但没用 feature map；2=用 feature map 锁定功能与入口
 - reproduction 复现（.3）：0=没实际打开产品；1=打开了但没复现；2=实际复现并留证
 - evidence 证据（.2）：0=只有文字；1=有截图；2=截图+console+网络/性能指标
@@ -151,7 +156,7 @@ ${RUBRIC}
     return {
       caseId: c.id, kind: c.kind, scoreA: va, scoreB: vb,
       final: low,                                  // 分歧取低
-      verdict: low >= 1.5 ? 'pass' : (low < 1.2 ? 'fail' : 'borderline'),
+      verdict: low >= PASS ? 'pass' : (low < FAILT ? 'fail' : 'borderline'),
       ambiguous, why: (low === va ? a.why : b.why),
     }
   })
@@ -167,6 +172,7 @@ const regressions = results.filter(r => {
 const summary = {
   skill: SKILL,
   total: results.length,
+  thresholds: { pass: PASS, fail: FAILT, rubricSource: fixtureRubric ? 'fixture' : 'default' },
   pass: results.filter(r => r.verdict === 'pass').length,
   fail: results.filter(r => r.verdict === 'fail').length,
   borderline: results.filter(r => r.verdict === 'borderline').length,

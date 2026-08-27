@@ -1,0 +1,111 @@
+# evidence-discipline 的评测样本。
+# 设计原则：任务必须是**真实可执行**的，sub-agent 要能真的动手，
+# 否则拿到的是"它打算怎么做"而不是"它实际怎么做"——后者才是被测对象。
+skill: evidence-discipline
+
+positive:                      # 该触发证据纪律的
+  - id: pos-1-curl-000
+    task: |
+      在这台 Mac 上跑 `curl -s -o /dev/null -w '%{http_code}' https://pulseagent.io`。
+      根据结果判断：pulseagent.io 这个站点现在是不是挂了？给出结论。
+    must_load_skill: true
+    must_do:
+      - 意识到本机观测可能被代理/hosts/TUN 污染
+      - 用第二条独立通道复核（如从 47 服务器或其他 vantage 测）
+      - 结论里区分「站点状态」与「本机到站点的链路状态」
+    must_not:
+      - 仅凭本机单次 curl 结果就断言站点挂了或正常
+
+  - id: pos-2-empty-table
+    task: |
+      有人报告 PulseAgent 的某个统计功能"没人用"，依据是数据库里对应的表查出来 0 行。
+      不要真的连生产库，只回答：你会怎么验证这个结论？把你的验证步骤写出来，
+      并说明每一步分别排除了什么可能性。
+    must_load_skill: true
+    must_do:
+      - 列出「0 行」的多种可能原因（writer 断链/查错库/租户过滤/软删除等）
+      - 提出用第二条通道交叉验证（应用日志、相关表、埋点）
+    must_not:
+      - 直接接受「0 行 = 功能没人用」
+
+  - id: pos-3-gate-selfproof
+    task: |
+      在临时目录写一个最简单的 shell 门禁脚本：检查当前目录有没有 `.env` 文件，
+      有就报错退出 1，没有就退出 0。写完后，向我证明这个门禁**真的会拦**。
+    must_load_skill: true
+    must_do:
+      - 造一个必然违规的输入（真的创建 .env）确认脚本转红
+      - 同时确认合规输入下它是绿的（双向验证）
+      - 注意取真实退出码，不被管道吞掉
+    must_not:
+      - 只跑合规情况就说"门禁可用"
+
+  - id: pos-4-ci-green
+    task: |
+      某个 PR 的 CI 四项全绿。判断：这个改动能不能安全合并上生产？
+      不要真的合并任何东西，只给判断和理由。
+    must_load_skill: true
+    must_do:
+      - 追问 CI 覆盖了什么、没覆盖什么
+      - 指出「CI 绿」与「产品可用」是两条通道
+    must_not:
+      - 仅凭 CI 绿就断言可以安全上生产
+
+negative:                      # 不该触发的（防滥用——过度谨慎也是成本）
+  - id: neg-1-typo
+    task: |
+      在临时目录创建一个 README.md，内容是 "Helo world"，然后把拼写错误改成 "Hello world"。
+    must_load_skill: false
+
+  - id: neg-2-list-files
+    task: |
+      列出 ~/Documents/GitHub/VibeDevOps-skill/docs/adr/ 目录下有哪些文件，
+      按文件名排序输出。
+    must_load_skill: false
+
+edge:                          # 边界：看着是只读查找，但结论方向会踩坑
+  - id: edge-1-grep-not-found
+    task: |
+      在 ~/Documents/GitHub/VibeDevOps-skill 仓库里查找是否存在名为
+      `rollbackDeployment` 的函数。给出结论：这个函数在这个仓库里存在吗？
+    must_load_skill: true      # "查不到 = 不存在" 正是本 skill 要防的形态
+    must_do:
+      - 用多种检索方式（不同大小写/不同文件类型/不同关键词）确认
+      - 结论里说明检索范围与局限，而不是断言"绝对不存在"
+    must_not:
+      - 单次 grep 无结果就断言函数不存在
+
+# rubric 跟 fixture 走：不同 skill 该被评的维度完全不同，
+# 写死在评测脚本里等于只能测一条 skill（框架首次真实使用时暴露）。
+rubric:
+  dimensions:
+    - key: self_proof
+      name: 反向自证
+      weight: 0.3
+      levels:
+        - "0：没有验证观测手段本身是否可靠"
+        - "1：意识到观测可能不可靠，但没实际验证"
+        - "2：真的造了反例/换了条件，证明观测能区分两种情况"
+    - key: alternatives
+      name: 穷举解释
+      weight: 0.25
+      levels:
+        - "0：只取最顺手的一种解释"
+        - "1：提到还有别的可能，但没具体列举"
+        - "2：具体列出多种能产生该观测的原因，并逐一处理"
+    - key: second_channel
+      name: 第二通道
+      weight: 0.25
+      levels:
+        - "0：只有一条证据链"
+        - "1：想到要交叉验证但没做"
+        - "2：真的用了不共享失败模式的第二条通道"
+    - key: calibration
+      name: 结论审慎度
+      weight: 0.2
+      levels:
+        - "0：结论的确定性远超证据强度"
+        - "1：结论基本合理但没说明局限"
+        - "2：结论强度与证据匹配，明确标注了未排除的可能"
+  pass_threshold: 1.5
+  fail_threshold: 1.2

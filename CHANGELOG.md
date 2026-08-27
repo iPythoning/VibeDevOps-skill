@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.3 — 2026-08-27
+
+- **rubric 改为跟 fixture 走**。原先写死在 `run-skill-eval.js` 里（「定位/复现/证据/结论」四维，是给前端 bug 复现设计的）——**首次拿它测另一条 skill 时立刻暴露：这个框架只能测一条 skill**。现 rubric 写在 fixture 的 `rubric:` 段（维度/权重/分级/通过线全可配），没写则退回默认。打分 schema 的 dimensions 同步放开为动态 key。
+- **第一个真实用例进 `examples/`**：`evidence-discipline` 这条 skill 的 SKILL.md + 完整 fixture（7 case：4 正 2 反 1 边界，4 个 rubric 维度）。它同时是「失败模式写成可执行 skill」的第一个产物——**靶子是实测选的**：本机 59 条失败沉淀里，「观测不可靠却下确定结论」占 13 条，是第二名（4 条）的三倍多，且多条明确记着「第二次」。
+- 该 skill 覆盖的形态（每条都有事故背书）：管道吞退出码、错误走 stdout、jq `//` 把 false 当空、`--if-present` 静默成功、调试协议订阅时机、健康检查窗口太短、看似执行实为 no-op、本机代理污染观测。
+
+
 ## v1.7.2 — 2026-08-27
 
 - **`check-feature-map.sh` 去掉 pyyaml 硬依赖**。首次把门禁接进真实 CI 就挂了：self-hosted 构建机上只有 python3、**没有 pip**（`pip: command not found`，退出码 127）。**门禁不该因为环境缺个第三方库就红**——现改为有 pyyaml 用它、没有则用针对本 schema 的内置解析器（不是通用 YAML 解析器，只认模板里出现的形态）。

@@ -1,0 +1,55 @@
+# 对账循环心跳检查（ADR 0010 的守护）。
+#
+# 为什么需要它：onboard-reconcile 是整条接入自治链的根——**它死了，新仓就悄悄
+# 回到「必撞额度死」的状态，而没有任何东西会告诉人**。实测过一次：部署时漏带
+# 环境变量，循环每轮开头就退出，静默死了 20 分钟才被偶然发现。
+#
+# 机制：对账每轮成功跑完把 UTC 时间写进本仓变量 ONBOARD_LAST_SUCCESS；
+# 这个 workflow 每天检查它的年龄，超时即失败（GitHub 默认会给仓库主发邮件）。
+#
+# 刻意跑在托管 runner 上：**它监控的正是自建车道的健康**，如果它自己也跑在
+# 自建 runner 上，自建车道整个挂掉时它会一起沉默——监控与被监控对象必须
+# 不共享失败模式。免费额度足够一天一次的秒级 job。
+name: Onboard Heartbeat
+
+on:
+  schedule:
+    - cron: '0 1 * * *'      # 每天 UTC 01:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest    # 不走变量路由，见文件头注释
+    timeout-minutes: 5
+    steps:
+      - name: 检查对账心跳
+        env:
+          LAST: ${{ vars.ONBOARD_LAST_SUCCESS }}
+          MAX_AGE_HOURS: ${{ vars.ONBOARD_HEARTBEAT_MAX_AGE_HOURS || '3' }}
+        run: |
+          if [ -z "$LAST" ]; then
+            echo "::error::ONBOARD_LAST_SUCCESS 变量为空——对账循环从未成功写过心跳，或心跳未配置"
+            echo "排查：构建机上 systemctl status onboard-reconcile.timer；"
+            echo "     并确认 ONBOARD_HEARTBEAT_REPO 已指向本仓"
+            exit 1
+          fi
+          now=$(date -u +%s)
+          # BSD/GNU date 兼容
+          last=$(date -u -d "$LAST" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$LAST" +%s 2>/dev/null || echo 0)
+          if [ "$last" = "0" ]; then
+            echo "::error::心跳时间戳解析失败: $LAST"; exit 1
+          fi
+          age_h=$(( (now - last) / 3600 ))
+          echo "最后一次成功对账: $LAST（$age_h 小时前），阈值 ${MAX_AGE_HOURS}h"
+          if [ "$age_h" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::对账循环已 $age_h 小时没有成功跑完——新仓正在悄悄回到「必撞额度死」的状态"
+            echo "排查顺序："
+            echo "  1. systemctl status onboard-reconcile.timer onboard-reconcile.service"
+            echo "  2. journalctl -u onboard-reconcile.service -n 30   # 看是不是缺环境变量直接退出"
+            echo "  3. tail -50 <ONBOARD_LOG>                          # 看是不是某个仓的注册一直失败"
+            exit 1
+          fi
+          echo "✅ 对账循环健康"

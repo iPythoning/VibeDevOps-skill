@@ -35,7 +35,11 @@ if [ "${AUTOMERGE_SKIP_PROTECTION_CHECK:-0}" != "1" ]; then
   # 判据不能写成「输出为空即无保护」——gh api 在 404 时把错误 JSON 打到 **stdout**
   # （实测 149 字节的 {"message":"Branch not protected",...}），那样判据永远为假、
   # 这道门静默失效。要判实质字段：拿得到 required_status_checks 才算有保护。
-  PROT=$(gh api "repos/$REPO/branches/main/protection" --jq '.required_status_checks.strict // empty' 2>/dev/null || true)
+  # 取 .url 而不是某个布尔字段：jq 的 `//` 对 **false 与 null 一视同仁**都走
+  # alternative——判据写成 `.required_status_checks.strict // empty` 时，
+  # strict=false 的正常保护会被判成「无保护」（本人实测踩中，同型第三次）。
+  # .url 在保护存在时必为非空字符串，不存在时整个响应没有该字段。
+  PROT=$(gh api "repos/$REPO/branches/main/protection" --jq '.url // empty' 2>/dev/null || true)
   RULES=$(gh api "repos/$REPO/rulesets" --jq 'length' 2>/dev/null || echo 0)
   case "$RULES" in ''|*[!0-9]*) RULES=0 ;; esac
   if [ -z "$PROT" ] && [ "$RULES" = "0" ]; then

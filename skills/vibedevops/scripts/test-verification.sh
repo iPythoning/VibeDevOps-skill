@@ -56,7 +56,30 @@ write_map "$FIX/bad-i18n.yaml" "/app/inbox" "src/pages/Inbox.tsx" "nosuchprefix"
 if (cd "$FIX/repo" && "$V/check-feature-map.sh" --map "$FIX/bad-i18n.yaml" >/dev/null 2>&1); then
   echo "FAIL: i18n 前缀不存在时应该红"; exit 1
 fi
-echo "  feature-map 校验器: OK（一致通过 / 三类漂移各自转红）"
+# 实战暴露的两个缺陷（都在 PulseAgent 建首份地图时踩到）：
+# ① 注释掉的路由被当成真路由 → strict 模式误报「未入图」
+# ② 顶层包装组件（<ProtectedRoute><Onboarding/></ProtectedRoute>）只抓到外层，
+#    而包装组件常是内联函数无对应文件，那条路由怎么填都过不了
+cat > "$FIX/repo/src/App2.tsx" <<'EOF'
+{/* <Route path="retired" element={<Retired />} /> */}
+<Route path="/app/onboarding" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+EOF
+cat > "$FIX/wrap.yaml" <<EOF
+meta:
+  product: fixture
+  router_file: src/App2.tsx
+  i18n_files: [src/i18n/zh.json]
+features:
+  - name: 套壳路由
+    route: /app/onboarding
+    components: [src/pages/Inbox.tsx]
+    i18n_prefix: inbox
+EOF
+(cd "$FIX/repo" && "$V/check-feature-map.sh" --map "$FIX/wrap.yaml" >/dev/null 2>&1)   || { echo "FAIL: 包装组件应被穿透到内层功能组件"; exit 1; }
+# 注释里的路由不该出现在 strict 警告中
+STRICT_OUT=$(cd "$FIX/repo" && "$V/check-feature-map.sh" --map "$FIX/wrap.yaml" --strict 2>&1 || true)
+echo "$STRICT_OUT" | grep -q 'retired' && { echo "FAIL: 注释掉的路由不该被当成真路由"; exit 1; }
+echo "  feature-map 校验器: OK（一致通过 / 三类漂移各自转红 / 跳注释 / 穿透包装组件）"
 
 # ── 2. automerge 分级 ──
 mk_gh() { # $1=文件清单（换行分隔）
@@ -89,7 +112,23 @@ chmod 755 "$TOOLS/gh"
 PROT_CODE=0
 PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1 || PROT_CODE=$?
 [ "$PROT_CODE" = "30" ] || { echo "FAIL: 无分支保护时应判 30，实际 $PROT_CODE"; exit 1; }
-echo "  automerge 前置门: OK（无分支保护即拒判档）"
+# 反向：strict=false 的**正常保护**必须被认出来（jq `//` 对 false 走 alternative
+# 的坑，会把正常保护误判成无保护——同型第三次，锁死）
+cat > "$TOOLS/gh" <<'GHEOF'
+#!/bin/bash
+case "$*" in
+  *"branches/main/protection"*--jq*|*--jq*"branches/main/protection"*)
+    echo 'https://api.github.com/repos/o/r/branches/main/protection' ;;
+  *rulesets*) echo 0 ;;
+  *"--json files"*) echo 'README.md' ;;
+  *) echo '{}' ;;
+esac
+GHEOF
+chmod 755 "$TOOLS/gh"
+PROT_OK=0
+PATH="$TOOLS:$PATH" "$CI_T/automerge-tiers.sh" --pr 1 --repo o/r >/dev/null 2>&1 || PROT_OK=$?
+[ "$PROT_OK" = "0" ] || { echo "FAIL: 有分支保护时应正常判档（T1=0），实际 $PROT_OK"; exit 1; }
+echo "  automerge 前置门: OK（无保护拒判档 / 有保护放行，含 strict=false 形态）"
 
 mk_gh 'README.md
 docs/HANDOFF.md

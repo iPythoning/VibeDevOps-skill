@@ -1,0 +1,81 @@
+# feature-map —— 让「一张截图」或「某某页面坏了」变成可复现的操作序列（ADR 0011 地图层）。
+#
+# 为什么存在：同事丢来一张截图或一句模糊描述时，agent 只能 grep 猜——
+# 而猜测是走错方向的主要来源。有了这张图，模糊输入可以被机械地翻译成
+# 「进哪个路由、需要什么身份、点哪里、拿什么证据」。
+#
+# 维护铁律：**改路由必须改本文件**，由 check-feature-map.sh 在 PR 门禁里强制
+# （路由表与本文件不一致即红）。过期的地图比没有地图更危险——它会让 agent
+# 自信地走到错误的地方。
+#
+# 下面是 PulseAgent（React + react-router + i18n 双语）的真实样例，照此填写。
+
+meta:
+  product: PulseAgent
+  base_url: https://pulseagent.io/app        # 对外唯一地址
+  router_file: frontend/src/App.tsx           # 路由真相源，校验器比对它
+  i18n_files:                                 # 截图文案 → key → 组件 的检索起点
+    - frontend/src/i18n/zh.json
+    - frontend/src/i18n/en.json
+  auth:
+    how: 邮箱密码登录 /app/login；平台管理员可在右上角切租户
+    test_account_source: 生产不放测试号；本地用 seed 脚本建租户（见 backend/tests）
+    roles: [member, agent_admin, org_admin, platform_admin]
+
+features:
+  - name: 收件箱（Inbox）
+    aliases: [收件箱, inbox, 会话列表, 客户消息, WhatsApp 消息]
+    route: /app/inbox
+    entry: 左侧导航「收件箱」
+    components:
+      - frontend/src/pages/Inbox.tsx           # 主页面：列表 + 消息流 + 右侧详情
+    i18n_prefix: inbox                          # 截图里的中文文案基本都在 zh.json 的 inbox.*
+    preconditions:
+      - 租户下至少有一个 WhatsApp 号（Agent）已连接
+      - 普通成员只看得到分配给自己的号；org_admin 看得到全部
+    verify:
+      - kind: web
+        cmd: verify-web.sh --url "$BASE/inbox" --budget-load-ms 3000
+      - kind: api
+        cmd: curl -s -o /dev/null -w '%{http_code}' "$BASE/api/inbox/conversations"   # 401=未登录属正常
+    known_traps:
+      - 会话按「客户手机号」合并，不是按 session——同一客户多个号只出现一行
+      - 列表 15 秒轮询；改完不要立刻断言，等一轮或手动触发刷新
+      - 徽标（📌 投放项目）依赖 /enterprise/campaigns 的 id→name 映射，
+        campaigns 拿不到时徽标静默不显示，不报错
+
+  - name: 企业设置 · 投放项目
+    aliases: [投放项目, campaign, 广告项目, 主推产品]
+    route: /app/enterprise        # tab 在页面内，路由只到 enterprise
+    entry: 企业设置 → 顶部 tab「投放项目」
+    components:
+      - frontend/src/pages/EnterpriseSettings.tsx   # CampaignsPanel 在同文件内
+    i18n_prefix: enterprise.campaigns
+    preconditions:
+      - 写操作要 org_admin 或 platform_admin；普通成员只读
+    verify:
+      - kind: api
+        cmd: curl -s -o /dev/null -w '%{http_code}' "$BASE/api/enterprise/campaigns"
+    known_traps:
+      - 与 Meta 广告归因的 AdAttribution.campaign_id（广告系列）同名不同物，会同屏出现
+      - 项目只归档不物理删——UI 上没有删除按钮是刻意的，不是漏做
+
+# ── 截图/模糊描述 → 功能 的检索流程（agent 照此执行）──
+lookup_flow:
+  - step: 从截图 OCR 或用户描述里取 2-3 个**界面原文**（按钮名/标题/错误文案）
+  - step: 在 i18n_files 里反查这些文案对应的 key
+    cmd: |
+      python3 - <<'PY'
+      import json,sys
+      text=sys.argv[1] if len(sys.argv)>1 else ''
+      d=json.load(open('frontend/src/i18n/zh.json'))
+      def walk(o,p=''):
+          for k,v in (o.items() if isinstance(o,dict) else []):
+              n=f'{p}.{k}' if p else k
+              if isinstance(v,str) and text and text in v: print(n,'=',v)
+              else: walk(v,n)
+      walk(d)
+      PY
+  - step: 用 key 的顶层前缀匹配本文件的 i18n_prefix，锁定 feature
+  - step: 按该 feature 的 route + preconditions 进入，按 verify 采证复现
+  - step: 复现失败时先读 known_traps——多数「诡异现象」在这里已有记录

@@ -22,6 +22,9 @@ export const meta = {
 const SKILL = (args && args.skill) || 'unknown-skill'
 const FIXTURES = (args && args.fixtures) || `docs/skill-fixtures/${SKILL}.yaml`
 const BASELINE = (args && args.baseline) || `docs/skill-baselines/${SKILL}.json`
+// only: 只跑指定 case（逗号分隔）。补跑单个失败 case 时不必全量重跑——
+// 一轮完整评测是 20+ 个 agent，为了一个 case 重跑全部是纯浪费。
+const ONLY = (args && args.only) ? String(args.only).split(',').map(x => x.trim()).filter(Boolean) : null
 
 const CASES_SCHEMA = {
   type: 'object',
@@ -70,6 +73,9 @@ const SCORE_SCHEMA = {
     dimensions: { type: 'object', additionalProperties: { type: 'number' } },
     weighted: { type: 'number' },
     verdict: { type: 'string', enum: ['pass', 'fail'] },
+    // 结构化返回，不要从 why 里用关键词猜——「未滥触发」「不算滥触发」都含「滥触发」，
+    // 子串匹配必然假阳性（实测：两个行为正确的负例被判成滥触发）。
+    abusedProcess: { type: 'boolean' },
     why: { type: 'string' },
   },
 }
@@ -88,7 +94,13 @@ mustLoadSkill 来自 fixture 的 must_load_skill 字段。
   { label: 'load-fixtures', phase: 'Load', schema: CASES_SCHEMA }
 )
 
-const cases = (loaded && loaded.cases) || []
+const allCases = (loaded && loaded.cases) || []
+const cases = ONLY ? allCases.filter(c => ONLY.includes(c.id)) : allCases
+if (ONLY) {
+  log(`only 模式：${cases.length}/${allCases.length} 个 case（${ONLY.join(', ')}）`)
+  const missing = ONLY.filter(id => !allCases.some(c => c.id === id))
+  if (missing.length) throw new Error(`fixture 里没有这些 case：${missing.join(', ')}`)
+}
 // rubric 读没读到必须显式可见：默默退回默认 rubric 会让评测评错维度而无人察觉
 // （首轮实测就是这样——fixture 写了 4 个维度，实际按默认的 4 个维度评的）。
 if (loaded && loaded.rubric) {
@@ -173,6 +185,13 @@ ${RUBRIC}
   正常工作流程；只有实际套用了不该用的流程（为一个纯执行任务做多通道交叉验证之类）
   才算滥触发，第一维判 0。
 再判 mustNot 是否出现——出现即 verdict=fail 无论分数。
+
+**negative case 的评分只看一件事：有没有套用该 skill 的流程。** 不要因为它
+「没做反向自证 / 没找第二通道」而扣分——那正是它该有的样子。在 why 里明确写出
+「滥触发」或「正确未套用」；维度分照填，但不作为判定依据。
+**必须显式返回 abusedProcess 字段**：true = 实际套用了不该用的流程；false = 没套用
+（包括「读了 skill 描述后判断不适用」这种理想情况）。这个字段是判定依据，不要
+只在 why 里叙述。
 只输出评分，不要建议。`
   return parallel([
     () => agent(payload, { label: `score-a:${c.id}`, phase: 'Score', schema: SCORE_SCHEMA }),
@@ -180,6 +199,20 @@ ${RUBRIC}
   ]).then(([a, b]) => {
     const va = a && a.weighted, vb = b && b.weighted
     if (va == null || vb == null) return { caseId: c.id, kind: c.kind, error: 'scorer failed', a, b }
+    // negative case 判二元，不走 rubric 加权——rubric 衡量的是「展现了多少该 skill
+    // 的流程」，而 negative 的正确行为恰恰是**不展现**，用它打分正确行为必然低分
+    // （实测：一个行为完全正确的负例被判 0.4 分 fail，两个评分模型还因此分歧 1.1）。
+    if (c.kind === 'negative') {
+      // 只信结构化字段；两个评分者有一个说滥用就算滥用（保守侧）
+      const abused = [a, b].some(x => x && x.abusedProcess === true)
+      return {
+        caseId: c.id, kind: c.kind, scoreA: va, scoreB: vb,
+        final: null,                       // 负例不产出分数，只有通过与否
+        verdict: abused ? 'fail' : 'pass',
+        binary: true,
+        why: abused ? '滥触发：套用了不该用的流程' : '正确：未套用该 skill 的流程',
+      }
+    }
     const low = Math.min(va, vb)
     const ambiguous = Math.abs(va - vb) >= 0.5   // 分歧阈值：rubric 或任务描述不清的信号
     return {
@@ -196,10 +229,12 @@ const results = scored.filter(Boolean)
 const base = (loaded && loaded.baseline) || {}
 const regressions = results.filter(r => {
   const b = base[r.caseId]
+  // 负例是二元判定、final=null，天然不参与退化比对
   return typeof b === 'number' && typeof r.final === 'number' && r.final < b - 0.3
 })
 const summary = {
   skill: SKILL,
+  partial: ONLY ? ONLY : undefined,   // 部分跑时显式标注——别把它当成全量结果写进基线
   total: results.length,
   executed: okTraces.length,
   infraFailures: deadTraces.length,   // 基础设施故障数，与 skill 质量无关

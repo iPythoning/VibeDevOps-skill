@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.7.6 — 2026-08-27
+
+**用一个真实的新仓做端到端验证，发现「新项目不会被卡死」当时还不成立。**
+
+探针实验：建仓 → 推代码 → 什么都不做。结果 CI 立刻 **0 步失败、无 runner**——教科书式的额度死。对账循环随后自动接入（runner online + 7 个路由变量、零 FAIL），重跑 CI **success（5 步）**，构建机日志实证 `Running job: test → Succeeded`。链路是通的，但过程中挖出两个真缺口：
+
+- **注册前只 exclude 没真删旧配置**。`rsync --exclude` 只是「不从源复制」，**不会删掉目标里已有的同名文件**（`--delete` 默认也不删 excluded 项，那要 `--delete-excluded`）。重注册一个曾注册过的仓时旧 `.runner` 还在 → `config.sh` 报 already configured 失败 → 紧接着 `rm -rf` 删掉整个目录 → **单元指向不存在的路径无限 `activating`**，该仓从此没有 runner，一触发 CI 就撞额度死。**实测两个仓正卡在这个状态**（`token-meter-oss`、`client-site-autoglobal`，平台侧 0 online runner）。ADR 0010 写了「注册前清理」，代码里却只 exclude 没真删——**文档写了、代码没做**。
+- **`activating` 是巡检盲区**：systemd 里它既不是 `active` 也不是 `failed`，按这两个状态巡检会漏掉。失败分支现在同时清理单元。
+- 另修 `TEMPLATE` 用 `ls | head -1` 可能选中**目标仓自己**（按字母序 `repo-a` < `template-runner`），rsync 自己到自己。现改为跳过自身、且要求候选目录有可执行的 `run.sh` + `config.sh`。
+- 守卫补一轮「重注册带旧配置的仓」：断言注册前旧配置被真删、且能重新注册成功。
+
+
 ## v1.7.5 — 2026-08-27
 
 补齐 7/7 基线。补跑单个 case 的过程又挖出框架两个缺陷，都已修并被守卫锁死。

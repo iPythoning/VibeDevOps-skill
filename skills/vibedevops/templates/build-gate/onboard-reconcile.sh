@@ -179,4 +179,26 @@ if [ -n "$NEED_START" ]; then
   done
   log "started:$NEED_START"
 fi
+
+# ── 5. 心跳：把「本轮成功跑完」写回平台，让「对账自己死了」可被发现 ──
+# 这个循环是整条自治链的根：它死了，新仓就悄悄回到「必撞额度死」的状态，
+# 而没有任何东西会告诉人。**实测过一次**：用通用模板覆盖硬编码版时漏带 env，
+# ONBOARD_OWNER 未设导致每轮开头就退出，静默死了 20 分钟才被偶然发现。
+# 心跳写成仓库变量而不是本机文件——本机文件要人登上去才看得见，
+# 而平台侧的变量可以被一个 daily workflow 检查（超时即红、即发通知）。
+if [ -n "${ONBOARD_HEARTBEAT_REPO:-}" ]; then
+  NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  HB_CODE=$(gh_api -o /dev/null -w '%{http_code}' -X PATCH \
+    "$API/repos/$OWNER/$ONBOARD_HEARTBEAT_REPO/actions/variables/ONBOARD_LAST_SUCCESS" \
+    -d "$(jq -nc --arg v "$NOW_ISO" '{name:"ONBOARD_LAST_SUCCESS",value:$v}')")
+  if [ "$HB_CODE" = "404" ]; then   # 变量还不存在，首次创建
+    HB_CODE=$(gh_api -o /dev/null -w '%{http_code}' -X POST \
+      "$API/repos/$OWNER/$ONBOARD_HEARTBEAT_REPO/actions/variables" \
+      -d "$(jq -nc --arg v "$NOW_ISO" '{name:"ONBOARD_LAST_SUCCESS",value:$v}')")
+  fi
+  case "$HB_CODE" in
+    20*|404) log "heartbeat: $NOW_ISO" ;;
+    *) log "heartbeat FAIL code=$HB_CODE" ;;
+  esac
+fi
 exit 0

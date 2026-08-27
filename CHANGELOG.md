@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.8 — 2026-08-27
+
+- **新增 `templates/ci/set-branch-protection.sh`**，并给六个主力仓装上了机械门（此前全部零保护——CI 红也能点 Merge、谁都能直推 main 触发生产部署）：PulseAgent / clawops / paibao-console / paibao-trade-crm / inbox-core / paibao-portal。配置取向是单人仓友好：要求 CI 通过、**不要求 review**、管理员可绕过（逃生门）、禁 force push。
+- **安全阀：拒绝设一个该仓从没在 PR 上跑过的 check 名**。设错名字的后果是 PR 永远 BLOCKED，而界面只显示「Expected — Waiting for status to be reported」，极难看出是配置错。判据取自最近 5 个已合并 PR 的实际 check 记录。反向自证过（给假名字 → exit 3 拒绝）。
+- **脚本自身踩了两个坑，都已修并写进注释**：① `gh pr checks` 在该 PR 有失败 check 时**返回非零**，`set -e` 下直接杀掉脚本，表现为「核验中…」后无声退出（四个仓因此设置失败）；② 输出是 **tab 分隔**而 check 名可含空格（matrix 渲染的 `pytest (sqlite)`），`awk '{print $1}'` 会截成 `pytest`，核验永远失败。
+- **摸底实测到的三类「不能设为必需」的 check**：monorepo 里带 `paths:` 过滤的 job（只改其他目录的 PR 不触发，13 个样本里只出现 6 次）、`if: ${{ false }}` 的永久 skipped job、以及 `needs:` 上游失败时变 skipped 的衍生 job（GitHub 把 skipped 当通过，设了既拦不住又给误导的绿）。
+- **顺带修掉一个已埋下未爆的雷**（wa-sdr-core）：`runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}` **漏了 `fromJSON`**——变量值是 JSON 数组字符串，不解析会被当成单个 label，job **永远排队、永不给结论**（比 fail 更糟）。变量 08-22 设的、最后一次 run 在 08-20，至今没触发过。**若先设 required check 再撞上它，每个 PR 都会永久 BLOCKED。**
+
+
 ## v1.7.7 — 2026-08-27
 
 - **对账心跳**：`onboard-reconcile` 是整条接入自治链的**根**——它死了，新仓就悄悄回到「必撞额度死」的状态，**而没有任何东西会告诉人**。上一版部署时亲手证明过：用通用模板覆盖硬编码版漏带 env，`ONBOARD_OWNER` 未设导致每轮开头就退出，**静默死了 20 分钟**才被偶然发现（当时只看了 `bash -n` 通过就说「已部署」）。现每轮成功写 UTC 时间到仓库变量 `ONBOARD_LAST_SUCCESS`，daily workflow 检查年龄超时即红。

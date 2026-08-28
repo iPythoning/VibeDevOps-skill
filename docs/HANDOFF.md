@@ -25,12 +25,30 @@ https://claude.ai/code/artifact/19fd01b3-1d3f-400d-bebf-9c447d10c82d
 - **⚠️ 未处理 twin（P0 follow-up）**：本仓模板 `templates/ci/runner-failover.sh` 仍含同一炸弹。
   谁 `install.sh` / 同步该模板到自建机并置 managed=true 就重新上膛。**同步前必须先剔除同一分支。**
 
-### 🔧 待办 · P1：公开/发文前必修的三处"自打脸"（约 8–12h；不修则发文=负期望值）
-1. ADR 0009 旗舰主张（拦截型门禁必须每次用随机假凭据自证会红）**接受 9 天零实现**——
-   `templates/ci/pr-check.yml` + 本仓 `.github/workflows/ci.yml` 的 gitleaks 步骤都没有金丝雀。
-2. `.github/workflows/ci.yml:17,30,114,190` 四处硬编码 `runs-on: ubuntu-latest`，违反自己写进
-   ~/AGENTS.md + ADR 0006 的受管条款（同目录 `pr-check.yml` 却写对了变量路由）。
-3. `pr-check.yml:49-50` 仍是 `--if-present`——ADR 0011 自己点名批判的静默成功反模式。
+### ✅ 已完成 · P1：三处"自打脸"全修 + 合并 + main 绿（2026-08-28）
+PR #24（`f97db5b`）+ PR #25（`a6f64e4`）已合并，main CI 全绿。
+1. **ADR 0009 金丝雀已落地**：`ci.yml` 的 secrets job 与模板 `pr-check.yml` 的 secrets-scan job 各加
+   门禁自证——下载同版本 gitleaks（pinned sha256 + arch 自适应）扫一个随机假 `ghp_` token，扫不出即
+   `exit 1`。**CI 实证金丝雀步骤 success**（本地先证：`ghp_` 5/5 确定性检出；随机 AWS 键实测漏检已弃用）。
+2. **四处 `runs-on` 变量路由**：`ci.yml` 四处 → `${{ vars.CI_RUNNER && fromJSON(...) || 'ubuntu-latest' }}`
+   （完整性扫描又补了第 4 处 `image-retention.yml`）。`onboard-heartbeat.yml`/`hosted-canary.yml` 的硬编码是
+   刻意例外，未动。
+3. **去 `--if-present`**：模板 `pr-check.yml` 改为显式 `npm pkg get` 判定 + `::notice` 明示跳过。
+
+**⚠️ 修复过程中挖出并已处理的两个连带问题：**
+- **CI 打分器静默假红（PR #25 已修）**：`health-check.sh` 的 `inspect_ci_workflows` 消费方
+  `2>/dev/null || CI_FACTS=""` + 精确匹配，把 ruby 任何抖动静默变成假 0/15（正是 ADR 0009 §5 反面）。
+  改哨兵前缀提取 + 重试 + `unsafe_load_file`，加守卫测试（反向变异：旧码 CI=0、新码 15）。
+- **本 public 仓被 onboard-reconcile 误路由到无 ruby 的 xserver → CI 假红**：已 unset CI_RUNNER +
+  把 `VibeDevOps-skill` 写入 xserver `onboard-skip.txt`（`/etc` + `/lzcsys` 持久副本），回落 hosted。
+
+**🔭 遗留系统性问题（非本仓，待老板定夺）：**
+- `onboard-reconcile.sh:66` 用 `/user/repos?affiliation=owner`（含 public 仓），会把 **public 仓也路由到
+  self-hosted**——public 仓有免费 hosted，本不该上 xserver 车道。建议加 `visibility==PRIVATE` 过滤（改运行体 +
+  模板 + agents-toolchain 持久化）。当前靠单仓 skip 兜底。
+- **xserver runner 没装 ruby**——任何 CI 依赖 ruby 的仓被路由到 xserver 都会假红（health-check 打分器需 ruby）。
+- xserver `/etc/onboard-skip.txt` 是易失的（懒猫重启即失）；持久副本在 `/lzcsys` 但服务读 `/etc`——
+  需 bootstrap 开机把 `/lzcsys` 的 skip 播种进 `/etc`（否则重启后本仓又会被 xserver 接管）。
 
 ### 🧭 根因 · P1：最大结构性缺口
 **没有任何机制在对账"ADR 决策 ↔ templates 实现 ↔ 运行体"**。12 条 ADR 全靠人记得去实现，已至少

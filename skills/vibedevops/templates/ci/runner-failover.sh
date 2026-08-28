@@ -10,8 +10,8 @@
 # 两态闭环：
 #   正常态：在哨兵仓检测"账单拒绝签名" → 确认各仓 self-hosted runner 在线 →
 #           自动设变量包切自建 runner，通知。
-#   故障态：定期 dispatch 一个钉死托管 runner 的探针仓（账单坏时被拒 = 零成本）→
-#           探针跑成功 = CI 恢复 → 自动删变量包切回，通知。
+#   故障态：（恢复回切分支已作为 P0 安全修复移除——单次探针成功即跨全部纳管仓无界批量删除路由，
+#           且不可安全测试；托管有意退役时它只会是事故触发。仅保留 infra_heal 断连自愈。）
 #
 # 安全阀：
 #   - 只回收"本脚本设置的"变量（state.managed=true）；人工设的路由永不动。
@@ -166,23 +166,16 @@ infra_heal() {
 infra_heal
 
 if [ "${in_failover}" = true ]; then
-  # ── 故障态：探测 CI 是否恢复 ──
-  [ "$(state_get managed)" = "true" ] || { log "存在路由变量但非本脚本所设（managed!=true），不自动回收"; exit 0; }
-  now=$(date +%s); last=$(state_get last_probe_epoch); last=${last:-0}
-
-  probe=$(gh run list -R "${PROBE_REPO}" --workflow "${PROBE_WORKFLOW}" --limit 1 --json status,conclusion \
-          --jq '.[0] | "\(.status)/\(.conclusion)"' 2>/dev/null || true)
-  if [ "${probe}" = "completed/success" ]; then
-    for r in ${REPOS}; do repo_in_failover "$r" && del_bundle "$r" && log "RECOVERED: $r 变量已删，回托管"; done
-    state_set managed false
-    state_set last_probe_epoch 0
-    notify "CI 已恢复，全部仓已自动切回托管 runner"
-    exit 0
-  fi
-  if [ $((now - last)) -ge "${PROBE_INTERVAL}" ]; then
-    gh workflow run "${PROBE_WORKFLOW}" -R "${PROBE_REPO}" 2>/dev/null \
-      && state_set last_probe_epoch "${now}" && log "探针已 dispatch（上次结果: ${probe:-无}）"
-  fi
+  # ── 恢复回切分支已移除（P0 安全修复，2026-08-28）──
+  # 原逻辑：探针检测到托管 CI 恢复 → 对全部纳管仓 del_bundle，一次性删光路由变量切回托管。
+  # 这是个哑雷：① 单次探针成功即跨【全部】纳管仓批量删除；② del_bundle 用 `2>/dev/null || true`
+  # 吞掉删除失败；③ 该路径几乎不可能被安全测试——首次真实触发即作用于全部生产仓，无 dry-run。
+  # 当托管车道被有意永久退役时（自建 runner 成为常态主车道），它只可能作为事故触发、绝不可能作为
+  # 恢复触发。故移除回切动作与每小时探针 dispatch（账单坏时探针恒被拒，纯烧 API）；上方 PROBE_*
+  # 配置随之失效，保留仅为向后兼容。infra_heal（断连自愈）继续生效。
+  # 若确需"托管恢复后自动切回"，请以【有界、可测、逐仓二次确认】的方式显式重写，切勿恢复此处的
+  # 无界批量删除。
+  :
 else
   # ── 正常态：检测账单/额度故障 ──
   for r in ${SENTINELS}; do

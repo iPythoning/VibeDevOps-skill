@@ -24,6 +24,31 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with: { fetch-depth: 0 }
+      - name: Gate self-proof — gitleaks canary (ADR 0009)
+        # 门禁必须自证会红：先用随机假 GitHub token 喂给同版本 gitleaks，扫不出=扫描器坏了=
+        # 下面这道密钥门是假绿。一道从未失败过的门禁与一道不存在的门禁在证据上无法区分。
+        run: |
+          set -euo pipefail
+          ver=8.30.1
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"
+          case "${os}/${arch}" in
+            linux/x86_64)  asset=linux_x64;   sha=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+            linux/aarch64) asset=linux_arm64;  sha=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
+            darwin/arm64)  asset=darwin_arm64; sha=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+            darwin/x86_64) asset=darwin_x64;   sha=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709 ;;
+            *) echo "::error title=canary::unsupported runner platform ${os}/${arch}"; exit 1 ;;
+          esac
+          tmp="$(mktemp -d)"; trap 'rm -rf "${tmp}"' EXIT
+          # 随机假 token 放在仓库树外，不污染下面的真实扫描
+          printf 'github_token = ghp_%s\n' "$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 36)" > "${tmp}/planted.txt"
+          curl -fsSL --retry 3 -o "${tmp}/gl.tgz" "https://github.com/gitleaks/gitleaks/releases/download/v${ver}/gitleaks_${ver}_${asset}.tar.gz"
+          if command -v sha256sum >/dev/null 2>&1; then echo "${sha}  ${tmp}/gl.tgz" | sha256sum -c -; else echo "${sha}  ${tmp}/gl.tgz" | shasum -a 256 -c -; fi
+          tar -xzf "${tmp}/gl.tgz" -C "${tmp}" gitleaks
+          if "${tmp}/gitleaks" detect --no-git --source "${tmp}" --log-level error; then
+            echo "::error title=Gate self-proof failed::gitleaks 未标记植入的假密钥——扫描器已损坏，下面的真实扫描是假绿" >&2
+            exit 1
+          fi
+          echo "✓ 金丝雀通过：扫描器成功标记了植入的假密钥，真实扫描可信"
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
@@ -46,8 +71,22 @@ jobs:
           node-version-file: '.nvmrc'   # 没有 .nvmrc 就写死，如 '20'
           cache: npm
       - run: npm ci
-      - run: npm run lint --if-present
-      - run: npm run typecheck --if-present
+      # 不用 --if-present：脚本缺失时它静默成功，是 ADR 0011 点名、ADR 0009「跳过不是通过」的反模式。
+      # 改为显式判定——有脚本就真跑（真错真红），没有就在日志里明说"按设计跳过"，让缺失可见而非隐形。
+      - name: Lint
+        run: |
+          if [ "$(npm pkg get scripts.lint)" != '{}' ]; then
+            npm run lint
+          else
+            echo "::notice title=lint::package.json 无 'lint' 脚本，按设计跳过（非 --if-present 的静默通过）"
+          fi
+      - name: Typecheck
+        run: |
+          if [ "$(npm pkg get scripts.typecheck)" != '{}' ]; then
+            npm run typecheck
+          else
+            echo "::notice title=typecheck::package.json 无 'typecheck' 脚本，按设计跳过（非 --if-present 的静默通过）"
+          fi
       - run: npm test
       - run: npm run build
 

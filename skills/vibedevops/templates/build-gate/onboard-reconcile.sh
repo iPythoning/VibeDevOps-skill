@@ -60,11 +60,13 @@ TOKEN=$(head -1 "$TOKEN_FILE" | tr -d '[:space:]')
 gh_api() { curl -sS --connect-timeout 10 --max-time 40 \
   -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
 
-# ── 1. 列仓（owner 全部，排除 archived/fork）──
+# ── 1. 列仓（owner 全部，排除 archived/fork/public）──
+# 只接私有仓（含 internal）：public 仓有免费无限 hosted 额度，本就不需要自建 runner 车道，
+# 把它们路由到 self-hosted 反而会因运行体缺工具（如 ruby）而假红。private==true 覆盖 private+internal。
 REPOS=""
 for page in 1 2 3 4 5; do
   BATCH=$(gh_api "$API/user/repos?affiliation=owner&per_page=100&page=$page" \
-    | jq -r '.[] | select(.archived==false and .fork==false) | .name' 2>/dev/null) || break
+    | jq -r '.[] | select(.archived==false and .fork==false and .private==true) | .name' 2>/dev/null) || break
   [ -n "$BATCH" ] || break
   REPOS="$REPOS $BATCH"
 done

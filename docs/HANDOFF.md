@@ -42,11 +42,13 @@ PR #24（`f97db5b`）+ PR #25（`a6f64e4`）已合并，main CI 全绿。
 - **本 public 仓被 onboard-reconcile 误路由到无 ruby 的 xserver → CI 假红**：已 unset CI_RUNNER +
   把 `VibeDevOps-skill` 写入 xserver `onboard-skip.txt`（`/etc` + `/lzcsys` 持久副本），回落 hosted。
 
-**🔭 遗留系统性问题（非本仓，待老板定夺）：**
-- `onboard-reconcile.sh:66` 用 `/user/repos?affiliation=owner`（含 public 仓），会把 **public 仓也路由到
-  self-hosted**——public 仓有免费 hosted，本不该上 xserver 车道。建议加 `visibility==PRIVATE` 过滤（改运行体 +
-  模板 + agents-toolchain 持久化）。当前靠单仓 skip 兜底。
-- **xserver runner 没装 ruby**——任何 CI 依赖 ruby 的仓被路由到 xserver 都会假红（health-check 打分器需 ruby）。
+**🔭 系统性问题：**
+- ✅ **已修**：`onboard-reconcile` 枚举加 `.private==true`（覆盖 private+internal，排除 public）——public 仓
+  有免费 hosted，不再上 xserver 车道。三处同步：模板（本仓 PR #26 `6c0312d`）+ 运行体 `/usr/local/sbin/onboard-reconcile`
+  + 持久源 `iPythoning/xserver-bootstrap` `6de5e03`。守卫测试加 `repo-public` 夹具（反向变异实证）。
+  线上实证：枚举从 55 仓（含 24 public）收敛到 31 private，VibeDevOps-skill 已排除。
+- **xserver runner 没装 ruby**（待办）——任何 CI 依赖 ruby 的仓被路由到 xserver 都会假红（health-check 打分器需 ruby）。
+  现由「public 仓不上 xserver」大幅缓解（private 仓若也需 ruby 仍会中招）；根治=xserver 装 ruby 或打分器不硬依赖。
 - xserver `/etc/onboard-skip.txt` 是易失的（懒猫重启即失）；持久副本在 `/lzcsys` 但服务读 `/etc`——
   需 bootstrap 开机把 `/lzcsys` 的 skip 播种进 `/etc`（否则重启后本仓又会被 xserver 接管）。
 

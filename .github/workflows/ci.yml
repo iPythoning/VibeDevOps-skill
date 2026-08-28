@@ -85,18 +85,6 @@ jobs:
             skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh \
             skills/vibedevops/templates/image-lifecycle/cleanup-ghcr-versions.sh \
             skills/vibedevops/templates/image-lifecycle/install-local-guard.sh
-      - name: DEBUG scorer env (temp)
-        run: |
-          echo "ruby path: $(command -v ruby || echo NONE)"; ruby --version 2>&1 || echo "no ruby"
-          ruby -ryaml -e 'puts "Psych=#{Psych::VERSION}"' 2>&1 || true
-          d=$(mktemp -d); mkdir -p "$d/.github/workflows"
-          cp skills/vibedevops/templates/ci/pr-check.yml "$d/.github/workflows/"
-          cp skills/vibedevops/templates/ci/deploy.yml "$d/.github/workflows/"
-          ( cd "$d" && git init -q && git add .github )
-          echo "--- direct health-check CI line ---"
-          ./skills/vibedevops/scripts/health-check.sh --json "$d" 2>&1 | grep -E "CI：|Ruby/Psych" || true
-          echo "--- raw ruby parse of fixture ---"
-          ruby -ryaml -e 'ARGV.each{|f| begin; x=(YAML.respond_to?(:unsafe_load_file) ? YAML.unsafe_load_file(f) : YAML.load_file(f)); STDERR.puts "#{File.basename(f)}: ok"; rescue=>e; STDERR.puts "#{File.basename(f)}: RAISED #{e.class}: #{e.message}"; end}' "$d"/.github/workflows/*.yml 2>&1 || echo "ruby rc=$?"
       - name: Test CI/CD scoring
         run: ./skills/vibedevops/scripts/test-health-check.sh
       - name: Test global rule installation

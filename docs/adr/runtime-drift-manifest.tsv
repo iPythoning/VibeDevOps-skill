@@ -1,0 +1,5 @@
+# templates ↔ 运行体 漂移清单：声明「同一逻辑脚本」在模板与运行体之间的对应关系。
+# 运行体在其他仓/机器，单仓 CI 够不着，故 check-runtime-drift.sh 需本地有对应克隆才能比对。
+# 格式：<模板路径><TAB><运行体仓 env 变量><TAB><运行体内相对路径><TAB><说明>
+skills/vibedevops/templates/build-gate/onboard-reconcile.sh	XSERVER_BOOTSTRAP_DIR	scripts/onboard-reconcile	xserver 持久源（iPythoning/xserver-bootstrap）
+skills/vibedevops/templates/ci/runner-failover.sh	AGENTS_TOOLKIT_DIR	scripts/runner-failover.sh	Mac 运行体（iPythoning/agents-toolchain, ~/.agents）

@@ -1,0 +1,12 @@
+# ADR 机械对账豁免表：列在这里的 ADR 没有 docs/adr/checks/NNNN-*.sh，但必须写明「在哪被守卫」或「为何无静态不变量」。
+# 每条 ADR（0001+，排除 0000 模板）要么有 checks/NNNN-*.sh，要么在本表——check-adr-compliance.sh 强制。
+# 格式：<ADR 号><TAB><豁免理由/在哪被守卫>
+0001	OpenChamber 优先模型路由——vendor 运行时策略，无 templates 静态不变量
+0002	合并 main 即部署授权——部署授权策略，非可 grep 的代码不变量（由分支保护+CD 流程体现）
+0003	Reasonix 运行时边界——由 skills/vibedevops/scripts/test-reasonix-runtime.sh 守卫
+0004	容器镜像三层保留——由 skills/vibedevops/scripts/test-image-lifecycle.sh 守卫
+0005	大陆构建仓库化+同 digest——由 skills/vibedevops/scripts/test-container-build.sh 守卫
+0007	无人值守 failover + 网络自适应——运行体逻辑，跨仓（agents-toolchain runner-failover），见 check-runtime-drift.sh
+0008	出境链路分域分方向实测——运维实测流程，无 templates 静态不变量
+0010	仓库接入对账——由 skills/vibedevops/scripts/test-onboard.sh 守卫（含 private 过滤）
+0011	验证闭环四层——由 skills/vibedevops/scripts/test-verification.sh 守卫；silent-skip 部分由 0009-no-silent-skip.sh 覆盖

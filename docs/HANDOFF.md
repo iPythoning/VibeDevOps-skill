@@ -54,11 +54,18 @@ PR #24（`f97db5b`）+ PR #25（`a6f64e4`）已合并，main CI 全绿。
   git-tracked `onboard-skip.txt` 为源，开机播种到服务读的 `/etc`（易失）。同 commit `37475f4`。
   **新增 skip 项写进 xserver-bootstrap 仓的 `onboard-skip.txt` 并提交**（不要只改 /etc，重启即失）。
 
-### 🧭 根因 · P1：最大结构性缺口
-**没有任何机制在对账"ADR 决策 ↔ templates 实现 ↔ 运行体"**。12 条 ADR 全靠人记得去实现，已至少
-3 条没落地（上面三条即是）。加一条 CI 对账（例：VERSION 变了 README 未变则 fail；ADR 关键决策关键字
-必须在 templates 命中）比再写 5 个守卫测试 ROI 高一个量级。返工率佐证：全程 27%、含混合 36%，
-最后一天 08-27 单日 **60%**，趋势恶化非收敛。
+### ✅ 根因 · P1 已治理：ADR↔templates↔运行体 机械对账（ADR 0012，PR #27 `e45c915`）
+原缺口：**没有任何机制在对账"ADR 决策 ↔ templates 实现 ↔ 运行体"**，12 条 ADR 全靠人记得实现，已 3 条落空。
+已落地机制（CI 必过 + 自守卫）：
+- `docs/adr/checks/*.sh` 可执行不变量校验，锁死刚修的三处防回归（0006 无写死 runs-on / 0009-§1 金丝雀 /
+  0009-§2 无 --if-present / 0012 对账自己挂 CI）。
+- `check-adr-compliance.sh` 跑全部 checks + **强制覆盖**：每条 ADR 要么有 `checks/NNNN-*.sh` 要么在
+  `EXEMPT.tsv`——**新 ADR 两者都缺即 CI FAIL**，逼「决策与校验同生」。
+- `test-adr-compliance.sh` 反向变异守卫，5 处变异全被抓（判据写错的解药）。
+- `check-runtime-drift.sh` + `runtime-drift-manifest.tsv`：templates↔运行体跨仓漂移报告（不进 CI，需本地克隆）。
+  **新增 skip/ADR 或改运行体脚本后，跑一次它看漂移**。实测 runner-failover 模板 vs ~/.agents 漂移 +111/-123 行。
+- **后续可扩**：0009 §3/§4 等难 grep 的条款仍靠 review；跨仓 PAT 就绪后 runtime-drift 可升级为定时 CI 对账；
+  `ci.yml` 的 `bash -n` 仍是手工清单（审计旧账，可换 `find`）。
 
 ### 📦 P2：模板 ≠ 真身（可迁移性/可售性的根）
 `templates/` 与实际在跑的 `~/.agents/scripts/` 已漂移 117–299 行（runner-failover 237 / cd-lane 164 /

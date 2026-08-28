@@ -3,6 +3,53 @@
 > 任何 agent 开始工作前**必读**，结束工作前**必更新**。
 > 本文件是当前任务状态的唯一权威来源；历史决策看 docs/adr/，历史变更看 git log。
 
+## 2026-08-28 · 能力尽调（8-agent 证伪）+ 拆掉一颗活雷
+
+**触发**：老板问"这套工具链真的治理好了还是一直打补丁 / 能否迁移 / 能否商业化"。跑了 8-agent
+证伪导向尽调（5 路取证 + 3 路证伪，1.29M tokens）。完整报告（七维成熟度 / 返工趋势 / 逐层可迁移性 /
+五路径商业化排序，全部结论附可机械复验证据）见 Artifact：
+https://claude.ai/code/artifact/19fd01b3-1d3f-400d-bebf-9c447d10c82d
+**一句话结论**：成熟度 **1.9/5「成型工具链」**——在从打补丁往真治理过渡，但没到；缺的是
+**ADR ↔ templates ↔ 运行体的机械对账**。它作为个人杠杆/求职作品集是成功的，作为产品会输得难看。
+
+### ✅ 已处理 · P0：拆掉 runner-failover 的恢复回切炸弹（完成）
+- **炸弹**：`agents-toolchain/scripts/runner-failover.sh` 在 `state.managed=true` 时，一旦 hosted
+  探针返回 `completed/success`，就对全部纳管仓逐个 `del_bundle` 清空 `CI_RUNNER/CD_RUNNER` 等路由
+  变量。实测 state 确为 managed=true / **42 仓** / 三哨兵（PulseAgent·paibaowork-emdash·pulseagent-io-site）
+  均有 CI_RUNNER → `in_failover` 恒真，launchd 每 10min 都走到该分支；探针 205 次运行 0 成功，只差某次
+  GitHub 免费额度月度重置偶然成功即触发，且该路径**从未成功执行过一次**（首次运行即在 42 生产仓上，
+  无 dry-run/测试/二次确认）。
+- **修复**（agents-toolchain `af7dd3c`，已 push main）：移除回切动作 + 每小时探针 dispatch（纯烧
+  API），保留 `infra_heal` 断连自愈；`runner-failover-state.json` 的 `managed` 置 false 作数据层
+  防线（防模板回灌/脚本回退重新上膛）。实测：手动跑一次 exit 0、无删除、无探针、42 仓变量完好。
+- **⚠️ 未处理 twin（P0 follow-up）**：本仓模板 `templates/ci/runner-failover.sh` 仍含同一炸弹。
+  谁 `install.sh` / 同步该模板到自建机并置 managed=true 就重新上膛。**同步前必须先剔除同一分支。**
+
+### 🔧 待办 · P1：公开/发文前必修的三处"自打脸"（约 8–12h；不修则发文=负期望值）
+1. ADR 0009 旗舰主张（拦截型门禁必须每次用随机假凭据自证会红）**接受 9 天零实现**——
+   `templates/ci/pr-check.yml` + 本仓 `.github/workflows/ci.yml` 的 gitleaks 步骤都没有金丝雀。
+2. `.github/workflows/ci.yml:17,30,114,190` 四处硬编码 `runs-on: ubuntu-latest`，违反自己写进
+   ~/AGENTS.md + ADR 0006 的受管条款（同目录 `pr-check.yml` 却写对了变量路由）。
+3. `pr-check.yml:49-50` 仍是 `--if-present`——ADR 0011 自己点名批判的静默成功反模式。
+
+### 🧭 根因 · P1：最大结构性缺口
+**没有任何机制在对账"ADR 决策 ↔ templates 实现 ↔ 运行体"**。12 条 ADR 全靠人记得去实现，已至少
+3 条没落地（上面三条即是）。加一条 CI 对账（例：VERSION 变了 README 未变则 fail；ADR 关键决策关键字
+必须在 templates 命中）比再写 5 个守卫测试 ROI 高一个量级。返工率佐证：全程 27%、含混合 36%，
+最后一天 08-27 单日 **60%**，趋势恶化非收敛。
+
+### 📦 P2：模板 ≠ 真身（可迁移性/可售性的根）
+`templates/` 与实际在跑的 `~/.agents/scripts/` 已漂移 117–299 行（runner-failover 237 / cd-lane 164 /
+net-adaptive 141 / onboard-repo 89），且本机版有 19 处硬编码基础设施（`100.82.86.40`、`/lzcsys/data`、
+ssh 别名）从没进模板。跑通 22 仓的没开源，开源的 forks=0 从没在第二台机跑通。**迁移分层**：约定层 +
+`health-check.sh` 今天可用（<1h，8/8 守卫测试跨机通过）；完整自建 CD 是周级、需两台专用机器。
+
+### 💰 商业化（老板决策项，非工程任务）
+护城河≈0（代码 2-3 周可复刻）；12 条 ADR 仅 0009/0011 跨环境普适（17%），其余是中国车道/个人账号/
+拒付 CI 费三重约束的产物；创始动机（拒付 CI 费）与卖点自相矛盾；26 天 2 star / 0 fork。
+**建议：不做产品，把方法论翻英文公开 → 声誉 / staff offer / 咨询**（路径排序见 Artifact）。
+**明确不做 SaaS**（6-9 月全职、资产复用<15%、solo 胜率 5-10%）。
+
 ## 当前目标
 
 v1.7.0 验证自治（ADR 0011）已完成，PR #14 待合并。

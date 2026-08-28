@@ -60,6 +60,17 @@ TOKEN=$(head -1 "$TOKEN_FILE" | tr -d '[:space:]')
 gh_api() { curl -sS --connect-timeout 10 --max-time 40 \
   -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
 
+# ── 车道协同（模型 B）：hosted 主、self-hosted 只做额度耗尽 failover ──
+# runner-failover 是车道的唯一 owner，它把当前车道写进 hosted-canary 的 LANE_MODE 变量。
+# LANE_MODE=hosted 时 reconcile 绝不补 CI_RUNNER/CD_RUNNER，否则会把 failover 刚切回 hosted
+# 的仓又钉回 self-hosted（就是之前 unset 完 30 分钟被 reconcile 重新加回来那个坑的根治）。
+LANE_CTRL_REPO="${ONBOARD_LANE_CTRL_REPO:-$OWNER/hosted-canary}"
+LANE_MODE=$(gh_api "$API/repos/$LANE_CTRL_REPO/actions/variables/LANE_MODE" | jq -r '.value // "selfhosted"' 2>/dev/null)
+if [ "$LANE_MODE" = hosted ]; then
+  VARS_JSON=$(echo "$VARS_JSON" | jq 'del(.CI_RUNNER, .CD_RUNNER)')
+  log "LANE_MODE=hosted：本轮不补 CI_RUNNER/CD_RUNNER（车道归 runner-failover 管）"
+fi
+
 # ── 1. 列仓（owner 全部，排除 archived/fork/public）──
 # 只接私有仓（含 internal）：public 仓有免费无限 hosted 额度，本就不需要自建 runner 车道，
 # 把它们路由到 self-hosted 反而会因运行体缺工具（如 ruby）而假红。private==true 覆盖 private+internal。

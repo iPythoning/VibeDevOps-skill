@@ -1,0 +1,25 @@
+# 车道同步契约 —— self-hosted runner 必须具备的命令。
+# 目的：让「同一个 job 落在 hosted 还是 self-hosted，结果一致」。缺任一项，
+# hosted 自带该工具、self-hosted 没有 → 同一 job「hosted 绿、self-hosted 红」（假红）。
+#
+# 这份清单只列【已证明当前 workflow 需要、且靠“存在即一致”就能对齐】的工具——
+# 它的主职是抓【回归】（例如 ruby 在懒猫重启后没被 bootstrap 装回来），以及切换前的
+# 一道廉价 sanity 门。真正的「两车道结果一致」证明由 check-lane-parity.sh --smoke 的
+# 按需冒烟比对给出（同一 workflow 两车道各跑一次、比结果）。
+#
+# 维护规则：某个仓的 job 在 self-hosted 上因缺工具失败 → 把该工具加到这里，
+# 同时加进 xserver-bootstrap 的 apt-packages-ours.txt（开机自动装、跨重启持久）。
+#
+# 刻意不列的：
+#  - node / python 的具体版本由 setup-node / setup-python 在两条车道各自下载对齐，
+#    版本无关于预装；apt 装的老版本反而是【假同步】。凡有仓直接用系统 node 才加，且需锁版本。
+#  - gh：当前 workflow 未直接使用（self-hosted 上 job 现在就全过）；哪天有仓用到再加。
+bash
+git
+curl
+tar
+gzip
+jq
+docker
+ruby
+python3

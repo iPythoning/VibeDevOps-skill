@@ -84,7 +84,18 @@ jobs:
             skills/vibedevops/templates/reasonix-runtime/install.sh \
             skills/vibedevops/templates/image-lifecycle/cleanup-docker-images.sh \
             skills/vibedevops/templates/image-lifecycle/cleanup-ghcr-versions.sh \
-            skills/vibedevops/templates/image-lifecycle/install-local-guard.sh
+            skills/vibedevops/templates/image-lifecycle/install-local-guard.sh \
+            skills/vibedevops/scripts/check-adr-compliance.sh \
+            skills/vibedevops/scripts/test-adr-compliance.sh \
+            skills/vibedevops/scripts/check-runtime-drift.sh \
+            docs/adr/checks/0006-runner-routing.sh \
+            docs/adr/checks/0009-gate-canary.sh \
+            docs/adr/checks/0009-no-silent-skip.sh \
+            docs/adr/checks/0012-wired-in-ci.sh
+      - name: ADR↔templates 机械对账 (ADR 0012)
+        run: ./skills/vibedevops/scripts/check-adr-compliance.sh
+      - name: Test ADR compliance guardrails
+        run: ./skills/vibedevops/scripts/test-adr-compliance.sh
       - name: Test CI/CD scoring
         run: ./skills/vibedevops/scripts/test-health-check.sh
       - name: Test global rule installation

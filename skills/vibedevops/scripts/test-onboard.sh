@@ -30,6 +30,7 @@ chmod 755 "$RUNNERS/template-runner/config.sh" "$RUNNERS/template-runner/run.sh"
 #   repo-b  有 workflows / 已有 runner / 只缺 1 变量 → 不注册、只补缺的
 #   repo-c  无 workflows                             → 不动
 #   repo-skip 有 workflows 但在 skip 清单            → 不动
+#   repo-public 有 workflows 但 private=false        → 不动（public 仓不上自建车道）
 cat > "$TOOLS/curl" <<'EOF'
 #!/bin/bash
 URL=""; POST=0; CODE_ONLY=0
@@ -44,7 +45,7 @@ for ((i=0; i<${#ARGS[@]}; i++)); do
 done
 [ "$POST" = "1" ] && echo "POST $URL" >> "$ONBOARD_TEST_CALLS"
 case "$URL" in
-  *"&page=1") echo '[{"name":"repo-a","archived":false,"fork":false},{"name":"repo-b","archived":false,"fork":false},{"name":"repo-c","archived":false,"fork":false},{"name":"repo-skip","archived":false,"fork":false},{"name":"repo-archived","archived":true,"fork":false}]' ;;
+  *"&page=1") echo '[{"name":"repo-a","archived":false,"fork":false,"private":true},{"name":"repo-b","archived":false,"fork":false,"private":true},{"name":"repo-c","archived":false,"fork":false,"private":true},{"name":"repo-skip","archived":false,"fork":false,"private":true},{"name":"repo-archived","archived":true,"fork":false,"private":true},{"name":"repo-public","archived":false,"fork":false,"private":false}]' ;;
   */user/repos?*) echo '[]' ;;
   */repos/*/repo-c/contents/.github/workflows) [ "$CODE_ONLY" = "1" ] && printf 404 ;;
   */contents/.github/workflows) [ "$CODE_ONLY" = "1" ] && printf 200 ;;
@@ -98,8 +99,9 @@ A_VARS=$(grep -c 'POST .*/repo-a/actions/variables$' "$CALLS" || true)
 B_VARS=$(grep -c 'POST .*/repo-b/actions/variables$' "$CALLS" || true)
 [ "$A_VARS" = "7" ] || { echo "FAIL: repo-a vars=$A_VARS (want 7)"; exit 1; }
 [ "$B_VARS" = "1" ] || { echo "FAIL: repo-b vars=$B_VARS (want 1, never overwrite)"; exit 1; }
-# repo-c（无 workflows）与 repo-skip（清单）完全不动
-grep -qE 'POST .*/(repo-c|repo-skip)/' "$CALLS" && { echo "FAIL: touched repo-c/repo-skip"; exit 1; }
+# repo-c（无 workflows）、repo-skip（清单）、repo-public（public 仓）完全不动
+grep -qE 'POST .*/(repo-c|repo-skip|repo-public)/' "$CALLS" && { echo "FAIL: touched repo-c/repo-skip/repo-public"; exit 1; }
+grep -q 'config .*repo-public' "$CALLS" && { echo "FAIL: 注册了 public 仓 repo-public（应被 private 过滤排除）"; exit 1; }
 # 注册后拉起了单元
 grep -q 'systemctl start github-actions-repo-a' "$CALLS" || { echo "FAIL: unit not started"; exit 1; }
 

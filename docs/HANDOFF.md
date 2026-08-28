@@ -47,10 +47,12 @@ PR #24（`f97db5b`）+ PR #25（`a6f64e4`）已合并，main CI 全绿。
   有免费 hosted，不再上 xserver 车道。三处同步：模板（本仓 PR #26 `6c0312d`）+ 运行体 `/usr/local/sbin/onboard-reconcile`
   + 持久源 `iPythoning/xserver-bootstrap` `6de5e03`。守卫测试加 `repo-public` 夹具（反向变异实证）。
   线上实证：枚举从 55 仓（含 24 public）收敛到 31 private，VibeDevOps-skill 已排除。
-- **xserver runner 没装 ruby**（待办）——任何 CI 依赖 ruby 的仓被路由到 xserver 都会假红（health-check 打分器需 ruby）。
-  现由「public 仓不上 xserver」大幅缓解（private 仓若也需 ruby 仍会中招）；根治=xserver 装 ruby 或打分器不硬依赖。
-- xserver `/etc/onboard-skip.txt` 是易失的（懒猫重启即失）；持久副本在 `/lzcsys` 但服务读 `/etc`——
-  需 bootstrap 开机把 `/lzcsys` 的 skip 播种进 `/etc`（否则重启后本仓又会被 xserver 接管）。
+- ✅ **已修**：xserver 装 ruby——`apt-packages-ours.txt` 加 `ruby`（开机 bootstrap 自动补装，跨重启持久），
+  运行时已装 ruby 3.1.2 (Psych 4.0.3)。功能实证：xserver 上跑 `inspect_ci_workflows` 的 ruby（含 PR #25 的
+  `unsafe_load_file`）输出 `CI_FACTS 1 0 0`，打分器不再假 0/15。持久源 `xserver-bootstrap` `37475f4`。
+- ✅ **已修**：onboard-skip 跨重启持久——`bootstrap.sh` step2 加 `install onboard-skip.txt → /etc/onboard-skip.txt`，
+  git-tracked `onboard-skip.txt` 为源，开机播种到服务读的 `/etc`（易失）。同 commit `37475f4`。
+  **新增 skip 项写进 xserver-bootstrap 仓的 `onboard-skip.txt` 并提交**（不要只改 /etc，重启即失）。
 
 ### 🧭 根因 · P1：最大结构性缺口
 **没有任何机制在对账"ADR 决策 ↔ templates 实现 ↔ 运行体"**。12 条 ADR 全靠人记得去实现，已至少

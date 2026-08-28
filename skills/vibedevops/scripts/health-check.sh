@@ -75,7 +75,7 @@ end
 
 ARGV.each do |file|
   begin
-    doc = YAML.load_file(file)
+    doc = YAML.respond_to?(:unsafe_load_file) ? YAML.unsafe_load_file(file) : YAML.load_file(file)
   rescue StandardError
     next
   end
@@ -155,7 +155,8 @@ ARGV.each do |file|
   safe ||= push_main && deploy && smoke && rollback
 end
 
-puts [pr ? 1 : 0, auto ? 1 : 0, safe ? 1 : 0].join(' ')
+# 带哨兵前缀输出，消费方按前缀提取——任何 ruby 版本的告警/杂散 stdout 都不会污染判据
+puts "CI_FACTS #{[pr ? 1 : 0, auto ? 1 : 0, safe ? 1 : 0].join(' ')}"
 RUBY
 }
 
@@ -181,7 +182,13 @@ if [ -d .github/workflows ]; then
   PR=0; AUTO_DEPLOY=0; SAFE_DEPLOY=0
   CI_FACTS=""
   if command -v ruby >/dev/null 2>&1; then
-    CI_FACTS="$(inspect_ci_workflows .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null)" || CI_FACTS=""
+    # 按哨兵前缀提取 + 重试：容忍 ruby 杂散 stdout 与 runner 上的偶发失败。
+    # 旧写法（裸捕获 + 精确匹配 + 静默吞错）会把任何一次抖动变成假 0/15——曾致 main CI 假红。
+    for _try in 1 2 3; do
+      CI_FACTS="$(inspect_ci_workflows .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null | sed -n 's/^CI_FACTS //p' | tail -1)"
+      [[ "$CI_FACTS" =~ ^[01][[:space:]][01][[:space:]][01]$ ]] && break
+      CI_FACTS=""
+    done
   fi
   if [[ "$CI_FACTS" =~ ^[01][[:space:]][01][[:space:]][01]$ ]]; then
     read -r PR AUTO_DEPLOY SAFE_DEPLOY <<< "$CI_FACTS"

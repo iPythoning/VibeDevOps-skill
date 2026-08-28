@@ -144,4 +144,15 @@ YAML
 git -C "$STEP_GUARD" add .github
 [ "$(ci_score "$STEP_GUARD")" = 12 ] || { echo "step-only rollback guard must not earn safety points"; exit 1; }
 
+# ── 哨兵提取健壮性：ruby 往 stdout 打杂散行时，CI 判据不得被污染成假 0/15 ──
+# 复现曾致 main CI 假红的失败类（identical files 同环境时好时坏）：消费方必须按哨兵前缀提取。
+REAL_RUBY="$(command -v ruby || true)"
+if [ -n "$REAL_RUBY" ]; then
+  WRAP="$TMP_ROOT/ruby-wrap"; mkdir -p "$WRAP"
+  { printf '#!/bin/sh\n'; printf 'echo "warning: stray line on stdout"\n'; printf 'exec %q "$@"\n' "$REAL_RUBY"; } > "$WRAP/ruby"
+  chmod +x "$WRAP/ruby"
+  polluted="$(PATH="$WRAP:$PATH" ci_score "$GOOD")"
+  [ "$polluted" = 15 ] || { echo "ruby 杂散 stdout 污染了 CI 判据（哨兵提取失效），得 ${polluted:-空}/15 期望 15"; exit 1; }
+fi
+
 echo "health-check CI/CD fixtures passed"

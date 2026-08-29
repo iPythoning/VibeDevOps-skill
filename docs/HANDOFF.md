@@ -3,6 +3,29 @@
 > 任何 agent 开始工作前**必读**，结束工作前**必更新**。
 > 本文件是当前任务状态的唯一权威来源；历史决策看 docs/adr/，历史变更看 git log。
 
+## 2026-08-29 · 车道模型 B（hosted 主/self-hosted failover）+ 两车道同步 已落地
+
+老板拍板模型 B（hosted 主，额度耗尽才走 self-hosted，重置切回）+ 硬约束「两车道必须同步」。
+- **运行版**（agents-toolchain `2665f40`）：failover 重建为安全 B——探针判额度、只在模式真正切换时
+  动作、切回只删 `managed_list` 里本脚本设过的仓（老回切炸弹病根）、切 self-hosted 前过 ssh xserver
+  parity 门、写 `LANE_MODE` 与 reconcile 协同。state 已初始化 `lane_mode=selfhosted`（当前额度确实耗尽=正确态）。
+- **同步保证**：`check-lane-parity.sh` + `lane-parity-manifest.txt`（已部署 xserver `/usr/local/sbin`，实测 9 项齐备 rc=0）。
+- **协同**：`onboard-reconcile` 读 `LANE_MODE`，hosted 态不补 CI_RUNNER（xserver-bootstrap `59661fe`）；`LANE_MODE=selfhosted` 变量已设。
+- **模板收口**（VibeDevOps-skill PR #28 `9b0eb17`）：模板 failover port 到 B（逻辑对齐运行版）+ 守卫测试进 CI
+  （5 用例 + 反向变异证明安全阀）+ ADR 0013 + check（机械对账全绿覆盖）。main CI 绿。
+- **验证**：failover 守卫 5/5 + 反向变异 FAIL 正确；dry-run 无误切；parity rc=0；ADR 机械对账全绿。
+- **⛔ 待时间验证**：下次额度重置（约 9/1）时由新机制自动切回 hosted——届时观察 `runner-failover.log` 的
+  「已切回 hosted」日志确认 B 闭环真跑通。
+
+## 仍开着的（审计遗留，本会话未碰——不是新造的洞）
+
+- 3 条空操作安全断言（`test-build-runner.sh` / `test-reasonix-runtime.sh` 的 `! grep` 在 set -e 下恒真，含密钥断言）
+- `build-gate.sh`（254 行旗舰、含远程 rm -rf）0 守卫测试
+- ADR 0009 §5「禁吞 stderr」无机械 check（runner-failover 等仍有 2>/dev/null）
+- README 停在 08-10，落后多个版本/ADR
+- 结构性单点（一机/一人/一账号/一登录态）——要钱或换 org，另一量级
+
+
 ## 2026-08-28 · 能力尽调（8-agent 证伪）+ 拆掉一颗活雷
 
 **触发**：老板问"这套工具链真的治理好了还是一直打补丁 / 能否迁移 / 能否商业化"。跑了 8-agent

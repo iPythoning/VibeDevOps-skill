@@ -76,6 +76,8 @@ jobs:
             skills/vibedevops/templates/ci/automerge-tiers.sh \
             skills/vibedevops/templates/build-gate/onboard-repo.sh \
             skills/vibedevops/templates/ci/runner-failover.sh \
+            skills/vibedevops/scripts/test-runner-failover.sh \
+            skills/vibedevops/templates/build-gate/check-lane-parity.sh \
             skills/vibedevops/templates/ci/cd-lane.sh \
             skills/vibedevops/templates/build-gate/net-adaptive.sh \
             skills/vibedevops/templates/build-gate/warm-base-images.sh \
@@ -104,6 +106,8 @@ jobs:
         run: ./skills/vibedevops/scripts/test-build-runner.sh
       - name: Test repo onboarding reconcile guardrails
         run: ./skills/vibedevops/scripts/test-onboard.sh
+      - name: Test runner-failover lane-switch guardrails
+        run: ./skills/vibedevops/scripts/test-runner-failover.sh
       - name: Test verification autonomy guardrails
         run: ./skills/vibedevops/scripts/test-verification.sh
       - name: Test container build mirror fallback

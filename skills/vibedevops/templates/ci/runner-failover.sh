@@ -7,11 +7,11 @@
 #
 # 部署：在一台常驻机上定时跑（cron / systemd timer / launchd，如每 10 分钟）。
 #
-# 两态闭环：
-#   正常态：在哨兵仓检测"账单拒绝签名" → 确认各仓 self-hosted runner 在线 →
-#           自动设变量包切自建 runner，通知。
-#   故障态：（恢复回切分支已作为 P0 安全修复移除——单次探针成功即跨全部纳管仓无界批量删除路由，
-#           且不可安全测试；托管有意退役时它只会是事故触发。仅保留 infra_heal 断连自愈。）
+# 模型 B（hosted 主，self-hosted 只做额度耗尽 failover）：
+#   探针判额度：只看探针仓一个 hosted job（0 步/无 runner=额度拒绝），绝不拿业务仓当判据。
+#   额度耗尽 → 过车道同步门(parity) → 逐仓设 bundle 切 self-hosted，写 LANE_MODE=selfhosted。
+#   额度重置 → 只 del 本脚本 managed_list 里的仓，切回 hosted，写 LANE_MODE=hosted。
+#   同步保证：切 self-hosted 前跑 LANE_PARITY_CMD（同一 job 两车道结果必须一致）；空=降级放行。
 #
 # 安全阀：
 #   - 只回收"本脚本设置的"变量（state.managed=true）；人工设的路由永不动。
@@ -24,7 +24,7 @@
 #   RUNNER_LABEL 切到自建时写入 CI_RUNNER/CD_RUNNER 的标签数组
 #   STATE_DIR    状态/日志目录（默认 ~/.runner-failover）
 set -u
-PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"   # 覆盖常见 gh/jq 安装位
+PATH="${RUNNER_FAILOVER_EXTRA_PATH:+$RUNNER_FAILOVER_EXTRA_PATH:}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"   # 覆盖常见 gh/jq 安装位
 
 OWNER="${OWNER:-$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)}"
 PROBE_REPO="${PROBE_REPO:-${OWNER}/hosted-probe}"
@@ -135,11 +135,16 @@ gh auth status >/dev/null 2>&1 || { log "gh 未登录，跳过"; exit 0; }
 
 REPOS=$(discover_repos)
 [ -n "${REPOS}" ] || { log "纳管清单为空且无缓存，跳过本轮"; exit 0; }
-# 哨兵 = 清单里最近推送的前三个仓（只在这几个上跑账单探测，省 API）
-SENTINELS=$(printf '%s' "${REPOS}" | tr ' ' '\n' | head -3 | tr '\n' ' ')
-
-in_failover=false
-for r in ${SENTINELS}; do repo_in_failover "$r" && in_failover=true && break; done
+# ── 车道同步门（同一 job 两车道结果必须一致）——切 self-hosted 前核验目标车道能跑 ──
+# LANE_PARITY_CMD：核验命令（如 'ssh builder /usr/local/sbin/check-lane-parity'）；空=不设门（降级放行）。
+LANE_PARITY_CMD="${LANE_PARITY_CMD:-}"
+PARITY_MSG=""
+parity_ok() {
+  [ -n "${LANE_PARITY_CMD}" ] || return 0
+  PARITY_MSG=$(eval "${LANE_PARITY_CMD}" 2>&1); local rc=$?
+  [ "$rc" = 255 ] && { PARITY_MSG="parity 命令不可达（网络？）"; return 2; }
+  return "$rc"
+}
 
 # ── 基建级失败自愈（两态都跑）──
 # self-hosted 断连会把 job 打成 Abandoned：conclusion=failure 但没有任何 failed step，
@@ -165,37 +170,73 @@ infra_heal() {
 }
 infra_heal
 
-if [ "${in_failover}" = true ]; then
-  # ── 恢复回切分支已移除（P0 安全修复，2026-08-28）──
-  # 原逻辑：探针检测到托管 CI 恢复 → 对全部纳管仓 del_bundle，一次性删光路由变量切回托管。
-  # 这是个哑雷：① 单次探针成功即跨【全部】纳管仓批量删除；② del_bundle 用 `2>/dev/null || true`
-  # 吞掉删除失败；③ 该路径几乎不可能被安全测试——首次真实触发即作用于全部生产仓，无 dry-run。
-  # 当托管车道被有意永久退役时（自建 runner 成为常态主车道），它只可能作为事故触发、绝不可能作为
-  # 恢复触发。故移除回切动作与每小时探针 dispatch（账单坏时探针恒被拒，纯烧 API）；上方 PROBE_*
-  # 配置随之失效，保留仅为向后兼容。infra_heal（断连自愈）继续生效。
-  # 若确需"托管恢复后自动切回"，请以【有界、可测、逐仓二次确认】的方式显式重写，切勿恢复此处的
-  # 无界批量删除。
-  :
-else
-  # ── 正常态：检测账单/额度故障 ──
-  for r in ${SENTINELS}; do
-    if billing_sig "$r"; then
-      log "检测到账单/额度拒绝签名（哨兵仓 $r），开始整体切换"
-      switched=""
-      for repo in ${REPOS}; do
-        repo_in_failover "${repo}" && continue
-        if runner_online "${repo}"; then
-          set_bundle "${repo}" && switched="${switched} ${repo}"
-        else
-          notify "${repo} 无在线 self-hosted runner，未切换（需人工处理）"
-        fi
-      done
-      if [ -n "${switched}" ]; then
-        state_set managed true
-        state_set last_probe_epoch 0
-        notify "托管 runner 被账单/额度拒绝，已自动切换到自建 runner:${switched}"
-      fi
-      break
+# ===== 车道状态机（模型 B：hosted 主，额度耗尽才走 self-hosted，重置切回）=====
+# MODE=上次切到的车道；managed_list=本脚本自己设过 bundle 的仓。安全阀（老回切炸弹病根修复）：
+# ① 只在【模式真正切换】时动作，不是每次探针成功都动；② 切回只删 managed_list 里的仓，绝不碰
+# 人工/reconcile 设的；③ 删除失败不吞、告警；④ 切 self-hosted 前过 parity 门。
+MODE=$(state_get lane_mode); MODE=${MODE:-hosted}
+now=$(date +%s); last=$(state_get last_probe_epoch); last=${last:-0}
+
+# 探针判额度：只看探针仓一个 hosted job（0 步/无 runner=额度拒绝），绝不拿业务仓当判据
+prid=$(gh run list -R "${PROBE_REPO}" --workflow "${PROBE_WORKFLOW}" --limit 1 --json databaseId,status,conclusion --jq '.[0]|"\(.databaseId) \(.status)/\(.conclusion)"' 2>/dev/null || true)
+probe=$(printf '%s' "${prid}" | cut -d' ' -f2); pid=$(printf '%s' "${prid}" | cut -d' ' -f1)
+quota=unknown
+if [ "${probe}" = "completed/success" ]; then
+  quota=available
+elif [ "${probe}" = "completed/failure" ] && [ -n "${pid}" ]; then
+  pj=$(gh api "repos/${PROBE_REPO}/actions/runs/${pid}/jobs" --jq '[.jobs[]|select((.steps|length)==0 and ((.runner_name // "")==""))]|length' 2>/dev/null || echo 0)
+  [ "${pj:-0}" -gt 0 ] && quota=exhausted
+fi
+
+# 到点补发探针（额度坏时被拒零成本），保证下一轮有新鲜判据
+if [ $((now - last)) -ge "${PROBE_INTERVAL}" ]; then
+  gh workflow run "${PROBE_WORKFLOW}" -R "${PROBE_REPO}" 2>/dev/null && state_set last_probe_epoch "${now}" && log "探针已 dispatch（上次: ${probe:-无}, quota=${quota}）"
+fi
+
+[ "${quota}" = unknown ] && { log "额度状态未知（probe=${probe:-无}），本轮不切换"; exit 0; }
+desired=hosted; [ "${quota}" = exhausted ] && desired=selfhosted
+
+if [ "${desired}" = "${MODE}" ]; then
+  # 无切换：self-hosted 态顺带跑 parity，提前发现漂移（网络失败不误报）
+  if [ "${desired}" = selfhosted ]; then
+    parity_ok; pr=$?
+    [ "${pr}" = 1 ] && notify "⚠️ self-hosted 车道漂移：${PARITY_MSG}（同一 job 可能假红，尽快修构建机）"
+  fi
+  exit 0
+fi
+
+if [ "${desired}" = selfhosted ]; then
+  # 额度耗尽 → 切 self-hosted。切换前过 parity 门（同步保证）。
+  parity_ok; pr=$?
+  [ "${pr}" = 1 ] && notify "⛔ 需切 self-hosted 但车道不同步：${PARITY_MSG}。仍切（hosted 在拒），缺工具的 job 会红——立即修构建机。"
+  managed_now=""
+  for repo in ${REPOS}; do
+    if runner_online "${repo}"; then
+      set_bundle "${repo}" && managed_now="${managed_now} ${repo}"
+    else
+      notify "${repo} 无在线 self-hosted runner，未切（job 会排队，需人工）"
     fi
   done
+  state_set lane_mode '"selfhosted"'
+  state_set managed_list "\"${managed_now# }\""
+  state_set last_probe_epoch 0
+  gh variable set LANE_MODE --body selfhosted -R "${PROBE_REPO}" 2>/dev/null || log "WARN 写 LANE_MODE 失败"
+  notify "hosted 额度耗尽 → 已切 self-hosted:${managed_now}"
+else
+  # 额度重置 → 切回 hosted。安全阀：只删 managed_list 里本脚本设过的仓，删除失败不吞。
+  prev=$(state_get managed_list)
+  [ -n "${prev}" ] || { log "切回 hosted：managed_list 为空，不删任何变量"; state_set lane_mode '"hosted"'; gh variable set LANE_MODE --body hosted -R "${PROBE_REPO}" 2>/dev/null; exit 0; }
+  err=$(mktemp); restored=""; failed=""
+  for repo in ${prev}; do
+    ok=1
+    for k in $(bundle_keys "${repo}"); do
+      gh variable delete "$k" -R "${OWNER}/${repo}" 2>"${err}" || { ok=0; log "WARN del ${repo}/$k 失败: $(cat "${err}")"; }
+    done
+    [ "${ok}" = 1 ] && restored="${restored} ${repo}" || failed="${failed} ${repo}"
+  done
+  rm -f "${err}"
+  state_set lane_mode '"hosted"'
+  state_set managed_list '""'
+  gh variable set LANE_MODE --body hosted -R "${PROBE_REPO}" 2>/dev/null || log "WARN 写 LANE_MODE 失败"
+  notify "hosted 额度已重置 → 已切回 hosted:${restored}${failed:+（删失败需人工:${failed}）}"
 fi

@@ -1,3 +1,11 @@
+## 2026-09-29 · 退役 onboard-reconcile 遗留对账链
+
+- `onboard-reconcile.timer`（XServer）已 stop+disable：该 timer 是 VIBEDEVOPS 受管规则明令的遗留入口，
+  且每 30min 因缺 `ONBOARD_OWNER` 空转失败。
+- 配套守护 `.github/workflows/onboard-heartbeat.yml` 已删除（守护对象不存在，留着只会每天误报）；
+  变量 `ONBOARD_LAST_SUCCESS` 已删。
+- 新仓接入改走 HK fleet 手动准入；监控对象以后是 `vibedevops-demand-controller.service`（hk-builder）。
+
 # 交接状态 · HANDOFF（VibeDevOps-skill）
 
 > 任何 agent 开始工作前**必读**，结束工作前**必更新**。

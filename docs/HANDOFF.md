@@ -1,3 +1,12 @@
+## 2026-09-29 · v1.8.0：三个月基建复盘文章 + 车队运维十诫
+
+- 新增 `articles/05-runner-fleet-postmortem.md`（9 颗雷复盘 + 10 条命令级自检，机器坐标已脱敏）；
+  `references/ci-cd-best-practices.md` 新增「自建 runner 车队运维十诫」；VERSION → 1.8.0。
+- 素材来自当日真实机队整改（第二控制器上线、三桶 token、写入锁、磁盘急救），
+  细节索引见 runbook（xserver-bootstrap 仓 docs/ci-cd-runbook.md）与验收方案 v2，不复述。
+- 验证：`bash -n` 全量脚本 + 9 个测试套件 + health-check --json（docs-only 变更，基线命令照跑）。
+- 下一步候选：文章 EN 版；health-check 新增「车队维度」体检项；fleet 的 demand 健康判据对齐。
+
 ## 2026-09-29 · 退役 onboard-reconcile 遗留对账链
 
 - `onboard-reconcile.timer`（XServer）已 stop+disable：该 timer 是 VIBEDEVOPS 受管规则明令的遗留入口，

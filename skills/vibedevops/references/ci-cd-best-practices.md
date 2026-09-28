@@ -26,6 +26,23 @@
 - 镜像清理禁止 `docker image rm --force` 和自动删除 volume；所有容器引用都保护。`docker builder prune --force` 仅关闭交互确认，必须限定过期且未使用 cache。清理失败单独告警并在下一次构建前重试；容量或清理债务超限时禁止制造新镜像，但不因容量维护失败回滚已经验证为健康的生产版本。
 - hosted CI 额度或容量不足时切换到受监控的 self-hosted runner/外部 CD 控制器；正常发布路径仍由 `push main` 自动触发，不能退化为人工命令。切换机制见 ADR 0006：`runs-on` 由仓库变量路由（`CI_RUNNER`/`CD_RUNNER`），故障日先跑 `templates/ci/runner-canary.yml` 实证调度与连通，再一条 `gh variable set` 完成切换；恢复即删变量回 hosted。额度/账单故障只影响 hosted 计算，不影响 self-hosted 调度与 Packages/API/git（2026-08-17 实证）。
 
+## 自建 runner 车队运维十诫（2026-09-29，真实事故沉淀）
+
+> 以下每一条都对应一次真实炸雷，完整复盘见 `articles/05-runner-fleet-postmortem.md`。10 条命令级自检也在该文末尾。
+
+1. **路由变量指向的标签必须有在线 runner 匹配**。每加一个仓到某车道，用一个真实 job 验证调度闭环——「配置写了」≠「路径走通过」。
+2. **私有仓与公有仓分车道**。自建 runner 服务公有仓 = 任何 fork PR 在你的机器执行代码；控制器拒收公有仓是特性不是故障，但拒收理由必须可读（`public repo refused by design`，不许塌缩成 `identity`）。
+3. **身份登记严格区分大小写**。往带 identity 校验的系统登记仓名，原样复制 API 返回的 name，手敲必炸。
+4. **僵尸注册与重叠标签必须从根上清除**。旧 runner 注册（offline 常驻残留）会携带旧标签与新 runner 重叠，写死旧标签的 workflow 将随机分裂调度。退役 = disable 服务 + 删除注册，不是仅打 offline。
+5. **一个轮询服务一枚 token**。多个服务（控制器/路由器/探针）共用一枚 PAT 时 rate limit 互相挤兑，打穿之日全桌断粮（「集体眼瞎」：扫描全部 api_backoff）。按服务拆 token，并注意控制器在额度低时会动态要求更大的扫描间隔（fleet API 预算守护），共享桶下它会周期性冻结调度。
+6. **新装机必查：runner 单元声明的每个目录存在且 runner 用户可写**（`RUNNER_TOOL_CACHE`、`npm_config_cache`、work_dir 及其祖先的穿越权限、state_dir 权限模式）。缺一个目录的症状是 worker「接活即死」：0 step、无日志、slot 目录跑完即清、证据火化——诊断第一招是绕开 systemd 单元手动复现，delta 即嫌疑人。
+7. **磁盘要有每日保洁 + 定期验尸**。`docker system df` 与 `du` 对不上时（containerd 存储不在 `/var/lib/docker`），按 `/` 逐层 du 找真主人；旧系统的用户目录（几十 G）是常客。每日 prune 必须带过期过滤器（如镜像 72h / build cache 48h），current、last-known-good、生产/回滚 tag 受保护。
+8. **多台机器多 agent 写基建必须持锁留痕**。flock 互斥 + 强制审计日志（身份/时间/动作），全局 AGENTS.md 声明同一机器同一时刻只允许一个写入者。没有锁的并发写入表现为「文件神秘消失/配置无人承认的变更」。
+9. **基础镜像 pin digest + 每周 `--pull` 刷新 + Renovate**。可变 tag 上游打安全补丁时 Dockerfile 文本不变、层缓存不自动更新；node_modules 进运行镜像是头号体积凶手（多阶段构建 / `npm prune --omit=dev`）。
+10. **验收基于证据而非声明**。问三个问题：关键 job 的真实 `runner_name` 是什么？它依赖的每条路径/每个标签/每枚 token 此刻存在且匹配？反例搜索找到了什么？「runner online」不构成证据。
+
+
+
 ## 持续交付与持续部署
 
 DORA 将持续交付定义为软件始终处于可按需安全发布状态；持续部署则进一步自动把通过门禁的变更发布到生产。本方案明确选择持续部署：人工决策在 PR 审核/合并，合并后的机械步骤全部自动化。

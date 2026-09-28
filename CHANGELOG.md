@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.8.0 — 2026-09-29
+
+- **新增复盘文章 `articles/05-runner-fleet-postmortem.md`**：三个月自建 runner 车队建设的 9 颗雷全记录（路由无宿主/控制器静默拒收/僵尸注册与标签重叠/共享 token 限流饥荒/worker 接活即死/磁盘尸体/多 agent 互踩/胖镜像/声明式验收），每颗雷按「现象 → 根因 → 为什么之前没爆」展开，附 10 条命令级开机自检。机器坐标已脱敏，雷的模型通用。
+- **CI/CD 最佳实践新增「自建 runner 车队运维十诫」**（`references/ci-cd-best-practices.md`）：路由必须有真实 job 验证闭环；公有仓拒收要可读；身份登记大小写敏感；僵尸与重叠标签从根清除；轮询服务按 token 拆账；新装机必查 runner 声明目录（缺 `RUNNER_TOOL_CACHE` 目录 = worker 0-step 无声死亡，确诊法是绕开 systemd 单元手动复现）；磁盘每日保洁 + du 验尸；多 agent 写基建持锁留痕；基础镜像 pin digest + 每周刷新 + Renovate；验收三问（runner_name / 依赖此刻存在吗 / 反例搜索）。
+- 文章中文版先发；EN 版与体检脚本新增车队维度随后。
+
 ## v1.7.9 — 2026-08-27
 
 - **修掉安全阀的假阳性**：`|| true` 把**网络失败**和「check 名不存在」吞成同一个结果——实测撞上一次 TLS handshake timeout，正确的 check 名 `test` 被判成「从没出现过」。fail-closed 的方向没错，**误导的诊断信息才是真问题**：它会把人训练成习惯性加 `--force-unverified-checks`，等于把安全阀废掉。现在区分两种成因：一个 PR 都取不到 check 记录 → exit **4** +「无法核验，先重试别急着 --force」；取到了但没这个名字 → exit **3** +「从没出现过」。

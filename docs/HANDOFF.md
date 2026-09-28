@@ -109,7 +109,7 @@ PR #24（`f97db5b`）+ PR #25（`a6f64e4`）已合并，main CI 全绿。
 
 ### 📦 P2：模板 ≠ 真身（可迁移性/可售性的根）
 `templates/` 与实际在跑的 `~/.agents/scripts/` 已漂移 117–299 行（runner-failover 237 / cd-lane 164 /
-net-adaptive 141 / onboard-repo 89），且本机版有 19 处硬编码基础设施（`100.82.86.40`、`/lzcsys/data`、
+net-adaptive 141 / onboard-repo 89），且本机版有 19 处硬编码基础设施（旧机构建机 tailscale 地址、`/lzcsys/data`、
 ssh 别名）从没进模板。跑通 22 仓的没开源，开源的 forks=0 从没在第二台机跑通。**迁移分层**：约定层 +
 `health-check.sh` 今天可用（<1h，8/8 守卫测试跨机通过）；完整自建 CD 是周级、需两台专用机器。
 
